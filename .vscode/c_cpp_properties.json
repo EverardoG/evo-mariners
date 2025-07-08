@@ -1,0 +1,20 @@
+{
+  "configurations": [
+    {
+      "name": "Mac",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "${env:CONDA_PREFIX}/include"
+      ],
+      "defines": [],
+      "compilerPath": "/usr/bin/g++",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "macos-gcc-x64",
+      "compilerArgs": [
+        "-L${env:CONDA_PREFIX}/lib"
+      ]
+    }
+  ],
+  "version": 4
+}
