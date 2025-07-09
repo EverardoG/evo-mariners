@@ -11,7 +11,7 @@ conda install pagmo pagmo-devel
 
 git clone git@github.com:EverardoG/evo-mariners.git
 cd evo-mariners
-.build.sh
+./build.sh
 ```
 
 # Slow-start
