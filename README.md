@@ -4,10 +4,10 @@ Install [conda](https://docs.conda.io/en/latest/). Run the following commands.
 
 ```
 conda create -n mariners
+conda activate mariners
 conda config --add channels conda-forge
 conda config --set channel_priority strict
 conda install pagmo pagmo-devel
-conda activate mariners
 
 git clone git@github.com:EverardoG/evo-mariners.git
 cd evo-mariners
