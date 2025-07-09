@@ -20,6 +20,7 @@ This repository depends on [pagmo](https://esa.github.io/pagmo2/install.html). I
 
 ```
 conda create -n mariners
+conda activate mariners
 conda config --add channels conda-forge
 conda config --set channel_priority strict
 conda install pagmo pagmo-devel
