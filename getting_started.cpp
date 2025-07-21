@@ -2,9 +2,9 @@
 
 #include <pagmo/algorithm.hpp>
 #include <pagmo/algorithms/sade.hpp>
-#include <pagmo/archipelago.hpp>
 #include <pagmo/problem.hpp>
 #include <pagmo/problems/schwefel.hpp>
+#include <pagmo/population.hpp>
 
 using namespace pagmo;
 
@@ -16,20 +16,15 @@ int main()
     problem prob{schwefel(30)};
 
     // 2 - Instantiate a pagmo algorithm (self-adaptive differential
-    // evolution, 100 generations).
-    algorithm algo{sade(100)};
+    // evolution, 10,000 generations).
+    algorithm algo{sade(10000)};
 
-    // 3 - Instantiate an archipelago with 16 islands having each 20 individuals.
-    archipelago archi{16u, algo, prob, 20u};
+    // Create a population of 20 individuals for the problem.
+    population pop{prob, 20u};
 
-    // 4 - Run the evolution in parallel on the 16 separate islands 10 times.
-    archi.evolve(10);
+    // Evolve the population using the algorithm.
+    pop = algo.evolve(pop);
 
-    // 5 - Wait for the evolutions to finish.
-    archi.wait_check();
-
-    // 6 - Print the fitness of the best solution in each island.
-    for (const auto &isl : archi) {
-        std::cout << isl.get_population().champion_f()[0] << '\n';
-    }
+    // Print the fitness of the best solution.
+    std::cout << pop.champion_f()[0] << '\n';
 }
