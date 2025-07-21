@@ -14,6 +14,19 @@
       "compilerArgs": [
         "-L${env:CONDA_PREFIX}/lib"
       ]
+    },
+    {
+      "name": "LimaARM",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "${env:CONDA_PREFIX}/include",
+        "${env:CONDA_PREFIX}/include/pagmo"
+      ],
+      "defines": [],
+      "compilerPath": "/usr/bin/g++",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "linux-gcc-arm64"
     }
   ],
   "version": 4
