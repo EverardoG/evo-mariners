@@ -1,0 +1,14 @@
+{
+    "cmake.environment": {
+    "CONDA_PREFIX": "/home/ever.linux/miniconda3/envs/mariners",
+    "CMAKE_PREFIX_PATH": "/home/ever.linux/miniconda3/envs/mariners",
+    "PATH": "/home/ever.linux/miniconda3/envs/mariners/bin:${env:PATH}"
+    },
+    "terminal.integrated.profiles.osx": {
+    "conda-shell": {
+      "path": "zsh",
+      "args": ["-c", "conda activate your-env-name && exec zsh"]
+    }
+},
+"terminal.integrated.defaultProfile.osx": "conda-shell"
+}

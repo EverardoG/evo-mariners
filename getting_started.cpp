@@ -10,6 +10,8 @@ using namespace pagmo;
 
 int main()
 {
+    pagmo::random_device::set_seed(42); // Set a fixed seed for deterministic results
+
     // 1 - Instantiate a pagmo problem constructing it from a UDP
     // (i.e., a user-defined problem, in this case the 30-dimensional
     // generalised Schwefel test function).

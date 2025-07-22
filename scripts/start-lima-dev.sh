@@ -1,6 +1,6 @@
 #!/bin/bash
 
-INSTANCE=ubuntu
+INSTANCE=ubuntu-x86
 PROJECT_PATH="$HOME/evo-mariners"
 
 # echo "Starting Lima instance '$INSTANCE'..."
