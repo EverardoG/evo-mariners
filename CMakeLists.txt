@@ -13,11 +13,16 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 # Define your executable
 add_executable(getting_started getting_started.cpp)
+add_executable(simple_evo simple_evo.cpp)
 
 # Link to Pagmo
 target_link_libraries(getting_started Pagmo::pagmo)
+target_link_libraries(simple_evo Pagmo::pagmo)
 
 # Optional: Embed rpath so the binary can find Pagmo at runtime
 set_target_properties(getting_started PROPERTIES
+    INSTALL_RPATH "$ENV{CONDA_PREFIX}/lib"
+)
+set_target_properties(simple_evo PROPERTIES
     INSTALL_RPATH "$ENV{CONDA_PREFIX}/lib"
 )
