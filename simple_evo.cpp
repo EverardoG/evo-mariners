@@ -1,10 +1,17 @@
 #include <iostream>
+#include <filesystem>
+#include <unistd.h>
+#include <thread>
+#include <mutex>
 
 #include <pagmo/algorithm.hpp>
 #include <pagmo/algorithms/sade.hpp>
 #include <pagmo/problem.hpp>
 #include <pagmo/problems/schwefel.hpp>
 #include <pagmo/population.hpp>
+#include <pagmo/batch_evaluators/thread_bfe.hpp>
+
+static std::mutex cout_mtx;
 
 using namespace pagmo;
 
@@ -38,7 +45,43 @@ struct rescue_problem {
     // Implementation of the objective function.
     vector_double fitness(const vector_double &dv) const
     {
-        // return {dv[0] * dv[3] * (dv[0] + dv[1] + dv[2]) + dv[2]};
+        // Looking into multi-threading
+        std::lock_guard<std::mutex> lock(cout_mtx);
+        std::cout << "fitness() on thread " << std::this_thread::get_id() << "\n";
+
+        //  1) Determine what directory we will be working in
+        //  Likely something like $HOME/hpc-share/tmp/slurm-<job-id>/process-<process-id>/
+        // std::string home = std::getenv("HOME");
+
+        // const char *sidchar = std::getenv("SLURM_JOB_ID");
+        // std::string sid = sidchar ? sidchar : "none";   
+
+        // pid_t process_id = getpid();
+        // std::string pid = std::to_string(process_id);
+
+        // std::string dir = home + "/hpc-share/tmp/slurm-"+sid+"/process-"+pid;
+        // std::filesystem::create_directories(dir);
+    
+        //  2) Set up the directory
+        //  Write out neural network cs parameters to a csv file in that directory
+        //  return {dv[0] * dv[3] * (dv[0] + dv[1] + dv[2]) + dv[2]};
+
+        //  3) Run the apptainer instance. Put the csv directory as a parameter
+        //  Put the output log directory as a parameter
+
+        //  3a) Launch Mission
+        //  3b) Auto-deploy when ready
+        //  3c) Hit end condition (all swimmers rescued, vehicle out of bounds, or timeout)
+        //  3d) Stop running moos
+        //  3e) Run post-processing scripts on logs (process_node_reports, filter_duplicate_rows)
+        //  3f) Kill the container
+
+        //  4) Recieve some kind of kill command or stop command from apptainer
+        //  Maybe apptainer just exits on its own, and that's how cpp
+        //  knows to keep going
+
+        //  5) Process the logs (or post-processed info) that were saved to get the fitness
+        //  We should end up with something like team_positions.csv
         return {0.0};
     }
     // Implementation of the box bounds.
@@ -48,6 +91,11 @@ struct rescue_problem {
         // in the solution space.
         // If the length of these two vectors don't match, there is a problem.
         return {m_lower_weight_bounds, m_upper_weight_bounds};
+    }
+
+    // Tell pagmo this is thread safe so it runs parallel evaluations
+    pagmo::thread_safety get_thread_safety() const noexcept {
+        return pagmo::thread_safety::constant;
     }
 };
 
@@ -62,28 +110,27 @@ int main()
     std::vector<std::vector<double>> in_action_bounds = {{-1.0, 1.0}};
     problem prob{rescue_problem{in_structure, in_action_bounds}};
 
+    std::cout << "Pagmo will use up to "
+        << std::thread::hardware_concurrency()
+        << " threads.\n";
+
     // Compute the value of the objective function
     int num_weights = get_size_of_net(in_structure);
     std::vector<double> example_weights(num_weights, 1.0);
     std::cout << "Value of the objfun in (1, 2, 3, 4): " << prob.fitness(example_weights)[0] << '\n';
 
-    // Fetch the lower/upper bounds for the first variable.
-    std::cout << "Lower bounds: [" << prob.get_lb()[0] << "]\n";
-    std::cout << "Upper bounds: [" << prob.get_ub()[0] << "]\n\n";
-
     // Print p to screen.
     std::cout << prob << '\n';
 
-    // // 2 - Instantiate a pagmo algorithm (self-adaptive differential
-    // // evolution, 10,000 generations).
-    // algorithm algo{sade(10000)};
+    // 2 - Instantiate a pagmo algorithm
+    algorithm algo{sade(1)};
 
-    // // Create a population of 20 individuals for the problem.
-    // population pop{prob, 20u};
+    // Create a population of 20 individuals for the problem.
+    population pop{prob, 20u};
 
-    // // Evolve the population using the algorithm.
-    // pop = algo.evolve(pop);
+    // Evolve the population using the algorithm.
+    pop = algo.evolve(pop);
 
-    // // Print the fitness of the best solution.
-    // std::cout << pop.champion_f()[0] << '\n';
+    // Print the fitness of the best solution.
+    std::cout << pop.champion_f()[0] << '\n';
 }
