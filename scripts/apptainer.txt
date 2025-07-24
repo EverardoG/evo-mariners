@@ -1,0 +1,16 @@
+Start the apptainer
+apptainer instance start --bind $HOME/hpc-share:/home/moos/hpc-share --writable-tmpfs ubuntu_20.04_ivp_2680_learn.sif my_instance
+
+Enter apptainer
+apptainer shell instance://my_instance
+
+Stop the container
+apptainer instance stop my_instance
+
+List running apptainers
+apptainer instance list
+
+Run the mission in apptainer
+cd /home/moos/moos-ivp-learn/missions/alpha_learn; ./clean.sh; ./launch.sh --nogui -t
+OR
+cd /home/moos/moos-ivp-learn/missions/alpha_learn; learnKill; ./clean.sh; echo "x=13.0,y=-10.0,heading=181" > vpositions.txt; ./launch.sh 10 --logdir=$HOME/hpc-share/ --trim --nogui

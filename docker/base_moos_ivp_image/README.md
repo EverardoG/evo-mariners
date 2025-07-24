@@ -4,4 +4,4 @@ Pull with:
 docker pull ubuntu:20.04
 
 build with:
-sudo docker build -t ubuntu_20.04_ivp . 
+sudo docker build --no-cache --platform=linux/amd64 -t ubuntu_20.04_ivp . 

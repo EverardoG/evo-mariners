@@ -1,5 +1,5 @@
 FROM ubuntu:20.04
-LABEL maintainer = Tyler Paine <tpaine@mit.edu>
+LABEL maintainer="Tyler Paine <tpaine@mit.edu>"
   
 # Set the default shell to bash
 SHELL ["/bin/bash", "-c"]
@@ -11,7 +11,7 @@ ENV IVP_BEHAVIOR_DIRS="/home/moos/moos-ivp/lib"
 # Install required MOOS dependencies
 RUN apt-get update -y && \
    DEBIAN_FRONTEND=noninteractive \
-   apt-get install -y cmake build-essential git && \
+   apt-get install -y cmake build-essential git emacs && \
    apt-get clean
 
 # Make a user to run the MOOS apps and set as default user

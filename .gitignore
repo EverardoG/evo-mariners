@@ -43,3 +43,9 @@
 # Folders
 build/
 bin/
+
+# Ignore all overlay image files
+overlays/*.ext3
+
+# Ignore apptainer sifs
+*.sif
