@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <thread>
 #include <mutex>
+#include <sstream>
 
 #include <pagmo/algorithm.hpp>
 #include <pagmo/algorithms/sade.hpp>
@@ -50,17 +51,22 @@ struct rescue_problem {
         std::cout << "fitness() on thread " << std::this_thread::get_id() << "\n";
 
         //  1) Determine what directory we will be working in
-        //  Likely something like $HOME/hpc-share/tmp/slurm-<job-id>/process-<process-id>/
-        // std::string home = std::getenv("HOME");
+        //  Likely something like $HOME/hpc-share/tmp/slurm-<job-id>/process-<process-id>/thread-<thread-id>/
+        std::string home = std::getenv("HOME");
 
-        // const char *sidchar = std::getenv("SLURM_JOB_ID");
-        // std::string sid = sidchar ? sidchar : "none";   
+        const char *sidchar = std::getenv("SLURM_JOB_ID");
+        std::string sid = sidchar ? sidchar : "none";   
 
-        // pid_t process_id = getpid();
-        // std::string pid = std::to_string(process_id);
+        std::thread::id thread_id = std::this_thread::get_id();
+        std::ostringstream oss;
+        oss << thread_id;
+        std::string tid = oss.str();
 
-        // std::string dir = home + "/hpc-share/tmp/slurm-"+sid+"/process-"+pid;
-        // std::filesystem::create_directories(dir);
+        pid_t process_id = getpid();
+        std::string pid = std::to_string(process_id);
+
+        std::string dir = home + "/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid;
+        std::filesystem::create_directories(dir);
     
         //  2) Set up the directory
         //  Write out neural network cs parameters to a csv file in that directory

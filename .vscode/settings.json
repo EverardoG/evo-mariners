@@ -77,6 +77,10 @@
     "typeindex": "cpp",
     "typeinfo": "cpp",
     "codecvt": "cpp",
-    "filesystem": "cpp"
+    "filesystem": "cpp",
+    "complex": "cpp",
+    "list": "cpp",
+    "map": "cpp",
+    "set": "cpp"
   }
 }
