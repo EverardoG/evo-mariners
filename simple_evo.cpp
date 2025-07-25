@@ -4,11 +4,13 @@
 #include <thread>
 #include <mutex>
 #include <sstream>
+#include <iomanip>  // for std::setprecision
+#include <random>
+#include <stdexcept>
 
 #include <pagmo/algorithm.hpp>
-#include <pagmo/algorithms/sade.hpp>
+#include <pagmo/algorithms/sga.hpp>
 #include <pagmo/problem.hpp>
-#include <pagmo/problems/schwefel.hpp>
 #include <pagmo/population.hpp>
 #include <pagmo/batch_evaluators/thread_bfe.hpp>
 
@@ -23,6 +25,72 @@ int get_size_of_net(const std::vector<int> &structure) {
         total_size += (structure[i] + 1) * structure[i + 1];
     }
     return total_size;
+}
+
+/// Convert a vector of doubles into a CSV line (no newline appended).
+/// @param row      The vector of values to serialize.
+/// @param precision  Number of digits after the decimal point (default: 6).
+/// @return a string like "1.234567,2.000000,3.141593"
+std::string to_csv_line(const std::vector<double> &row, int precision = 6) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(precision);
+    for (size_t i = 0; i < row.size(); ++i) {
+        if (i) {
+            oss << ',';          // comma delimiter
+        }
+        oss << row[i];
+    }
+    return oss.str();
+}
+
+/// Generate an initial Pagmo population whose decision vectors are sampled
+/// uniformly in [low, high] (per component), regardless of the UDP’s full bounds.
+/// @param prob      The Pagmo problem (wraps your UDP).
+/// @param pop_size  Number of individuals to generate.
+/// @param low       Minimum value for each gene (default -1.0).
+/// @param high      Maximum value for each gene (default +1.0).
+/// @param seed      RNG seed (default: random_device).
+/// @returns         A Pagmo population of size pop_size.
+pagmo::population generate_initial_population(
+    const pagmo::problem &prob,
+    std::size_t pop_size,
+    double low = -1.0,
+    double high = +1.0,
+    unsigned seed = std::random_device{}()
+) {
+    // RNG & distribution for sampling in [low, high]
+    std::mt19937_64 rng{seed};
+    std::uniform_real_distribution<double> dist{low, high};
+
+    // Problem dimension
+    const std::size_t dim = prob.get_nx();
+
+    // Start with an empty population
+    pagmo::population pop{prob, 0u};
+
+    // Sample and push each individual
+    for (std::size_t i = 0; i < pop_size; ++i) {
+        pagmo::vector_double x(dim);
+        for (std::size_t d = 0; d < dim; ++d) {
+            x[d] = dist(rng);
+        }
+        pop.push_back(x);
+    }
+
+    return pop;
+}
+
+/// Compute the SGA Gaussian‐mutation parameter m_param_m required
+/// to get a per‐gene mutation standard deviation of `desired_step`,
+/// given your variable’s [lower, upper] bounds.
+/// @throws std::invalid_argument if upper <= lower
+inline double compute_sga_gaussian_param(double lower,
+                                         double upper,
+                                         double desired_step) {
+    if (upper <= lower) {
+        throw std::invalid_argument{"compute_sga_gaussian_param: upper must exceed lower"};
+    }
+    return desired_step / (upper - lower);
 }
 
 // Rescue problem that will run moos-ivp-learn simulations
@@ -69,8 +137,13 @@ struct rescue_problem {
         std::filesystem::create_directories(dir);
     
         //  2) Set up the directory
-        //  Write out neural network cs parameters to a csv file in that directory
+        //  Write out neural network csv parameters to a csv file in that directory
         //  return {dv[0] * dv[3] * (dv[0] + dv[1] + dv[2]) + dv[2]};
+        std::string parameters_str = to_csv_line(dv, 3);
+        std::cout << parameters_str << std::endl;
+
+
+        
 
         //  3) Run the apptainer instance. Put the csv directory as a parameter
         //  Put the output log directory as a parameter
@@ -107,7 +180,9 @@ struct rescue_problem {
 
 int main()
 {
-    pagmo::random_device::set_seed(42); // Set a fixed seed for deterministic results
+    unsigned int seed = 42u;
+
+    pagmo::random_device::set_seed(seed); // Set a fixed seed for deterministic results
 
     // 1 - Instantiate a pagmo problem constructing it from a UDP
     // (i.e., a user-defined problem, in this case the 30-dimensional
@@ -128,11 +203,34 @@ int main()
     // Print p to screen.
     std::cout << prob << '\n';
 
-    // 2 - Instantiate a pagmo algorithm
-    algorithm algo{sade(1)};
+    // Configure SGA
+    //    - 200 generations
+    //    - 90% crossover (exponential by default)
+    //    - 20% per‑gene mutation
+    //    - uniform mutation (redraw within [lb,ub])
+    //    - tournament size 3
+    std::pair<pagmo::vector_double, pagmo::vector_double> bounds = prob.get_bounds();
+    const pagmo::vector_double &lower = bounds.first;
+    const pagmo::vector_double &upper = bounds.second;
+    double desired_sigma = 1.0;  // mutation step
+    double param_m = compute_sga_gaussian_param(lower[0], upper[0], desired_sigma);
+    pagmo::sga sga_setup{
+        /*gen*/       1u,
+        /*cr*/        0.9,
+        /*eta_c*/     1.0,      // SBX index (unused here)
+        /*m*/         0.2,      // 20% mutation rate
+        /*param_m*/   param_m,      // mutation step
+        /*param_s*/   3u,       // tournament size
+        /*xover*/     "exponential",
+        /*mutation*/  "gaussian",
+        /*sel*/       "tournament"
+    };
 
-    // Create a population of 20 individuals for the problem.
-    population pop{prob, 20u};
+    // 2 - Instantiate a pagmo algorithm
+    algorithm algo{sga_setup};
+
+    // Create a population of 50 individuals for the problem.
+    population pop = generate_initial_population(prob, 50, -1.0, +1.0, seed);
 
     // Evolve the population using the algorithm.
     pop = algo.evolve(pop);
