@@ -126,6 +126,36 @@ struct rescue_problem {
         m_upper_weight_bounds = std::vector<double>(m_num_weights, 1e19);
     }
 
+    bool write_neural_network_csv(const vector_double &dv, std::string dir) const {
+        std::string weights_str = vec_double_to_str(dv, 3);
+        std::string structure_str = vec_int_to_str(m_structure);
+        std::string action_bounds_str = vec_double_to_str(m_action_bounds[0], 3) + "," + vec_double_to_str(m_action_bounds[1], 3);
+
+        // std::cout << weights_str << std::endl;
+        // std::cout << structure_str << std::endl;
+        // std::cout << action_bounds_str << std::endl;
+
+        std::string neural_network_dir = dir + "/neural_network_config.csv";
+        std::filesystem::path csv_file = neural_network_dir;
+
+        // return {0.0};
+
+        std::ofstream ofs(csv_file, std::ios::out | std::ios::trunc);
+        if (!ofs) {
+            std::cerr << "Error: cannot open " << csv_file << " for writing\n";
+            return false;
+        }
+
+        // 4) Write each string as its own row
+        ofs << weights_str << '\n';
+        ofs << structure_str << '\n';
+        ofs << action_bounds_str << '\n';
+
+        // 5) (Optional) flush to ensure data is on disk immediately
+        ofs.flush();
+        return true;
+    }
+
     // Implementation of the objective function.
     vector_double fitness(const vector_double &dv) const
     {
@@ -154,36 +184,12 @@ struct rescue_problem {
     
         //  2) Set up the directory
         //  Write out neural network csv parameters to a csv file in that directory
-        
-        std::string weights_str = vec_double_to_str(dv, 3);
-        std::string structure_str = vec_int_to_str(m_structure);
-        std::string action_bounds_str = vec_double_to_str(m_action_bounds[0], 3) + "," + vec_double_to_str(m_action_bounds[1], 3);
+        if (!write_neural_network_csv(dv, dir)) return {0.0};
 
-        // std::cout << weights_str << std::endl;
-        // std::cout << structure_str << std::endl;
-        // std::cout << action_bounds_str << std::endl;
-
-        std::string neural_network_dir = dir + "/neural_network_config.csv";
-        std::filesystem::path csv_file = neural_network_dir;
-
-        // return {0.0};
-
-        std::ofstream ofs(csv_file, std::ios::out | std::ios::trunc);
-        if (!ofs) {
-            std::cerr << "Error: cannot open " << csv_file << " for writing\n";
-            return {0.0};
-        }
-
-        // 4) Write each string as its own row
-        ofs << weights_str << '\n';
-        ofs << structure_str << '\n';
-        ofs << action_bounds_str << '\n';
-
-        // 5) (Optional) flush to ensure data is on disk immediately
-        ofs.flush();
-
-        //  3) Run the apptainer instance. Put the csv directory as a parameter
+        //  3) Run the apptainer instance.
+        //  Put the csv directory as a parameter
         //  Put the output log directory as a parameter
+        
 
         //  3a) Launch Mission
         //  3b) Auto-deploy when ready
