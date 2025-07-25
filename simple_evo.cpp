@@ -7,6 +7,7 @@
 #include <iomanip>  // for std::setprecision
 #include <random>
 #include <stdexcept>
+#include <fstream>
 
 #include <pagmo/algorithm.hpp>
 #include <pagmo/algorithms/sga.hpp>
@@ -31,12 +32,26 @@ int get_size_of_net(const std::vector<int> &structure) {
 /// @param row      The vector of values to serialize.
 /// @param precision  Number of digits after the decimal point (default: 6).
 /// @return a string like "1.234567,2.000000,3.141593"
-std::string to_csv_line(const std::vector<double> &row, int precision = 6) {
+std::string vec_double_to_str(const std::vector<double> &row, int precision = 6) {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(precision);
     for (size_t i = 0; i < row.size(); ++i) {
         if (i) {
             oss << ',';          // comma delimiter
+        }
+        oss << row[i];
+    }
+    return oss.str();
+}
+
+/// Convert a vector of ints into a CSV line (no newline appended).
+/// @param row  The vector of integer values to serialize.
+/// @return     A string like "1,2,3,4"
+std::string vec_int_to_str(const std::vector<int> &row) {
+    std::ostringstream oss;
+    for (std::size_t i = 0; i < row.size(); ++i) {
+        if (i) {
+            oss << ',';  // comma delimiter
         }
         oss << row[i];
     }
@@ -134,16 +149,38 @@ struct rescue_problem {
         std::string pid = std::to_string(process_id);
 
         std::string dir = home + "/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid;
+        std::cout << "dir: " << dir << std::endl;
         std::filesystem::create_directories(dir);
     
         //  2) Set up the directory
         //  Write out neural network csv parameters to a csv file in that directory
-        //  return {dv[0] * dv[3] * (dv[0] + dv[1] + dv[2]) + dv[2]};
-        std::string parameters_str = to_csv_line(dv, 3);
-        std::cout << parameters_str << std::endl;
-
-
         
+        std::string weights_str = vec_double_to_str(dv, 3);
+        std::string structure_str = vec_int_to_str(m_structure);
+        std::string action_bounds_str = vec_double_to_str(m_action_bounds[0], 3) + "," + vec_double_to_str(m_action_bounds[1], 3);
+
+        // std::cout << weights_str << std::endl;
+        // std::cout << structure_str << std::endl;
+        // std::cout << action_bounds_str << std::endl;
+
+        std::string neural_network_dir = dir + "/neural_network_config.csv";
+        std::filesystem::path csv_file = neural_network_dir;
+
+        // return {0.0};
+
+        std::ofstream ofs(csv_file, std::ios::out | std::ios::trunc);
+        if (!ofs) {
+            std::cerr << "Error: cannot open " << csv_file << " for writing\n";
+            return {0.0};
+        }
+
+        // 4) Write each string as its own row
+        ofs << weights_str << '\n';
+        ofs << structure_str << '\n';
+        ofs << action_bounds_str << '\n';
+
+        // 5) (Optional) flush to ensure data is on disk immediately
+        ofs.flush();
 
         //  3) Run the apptainer instance. Put the csv directory as a parameter
         //  Put the output log directory as a parameter
@@ -188,7 +225,7 @@ int main()
     // (i.e., a user-defined problem, in this case the 30-dimensional
     // generalised Schwefel test function).
     std::vector<int> in_structure = {8,10,2};
-    std::vector<std::vector<double>> in_action_bounds = {{-1.0, 1.0}};
+    std::vector<std::vector<double>> in_action_bounds = {{0.0, 1.0}, {-180.0, 180.0}};
     problem prob{rescue_problem{in_structure, in_action_bounds}};
 
     std::cout << "Pagmo will use up to "
