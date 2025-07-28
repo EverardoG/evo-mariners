@@ -192,7 +192,7 @@ struct rescue_problem {
         if (!write_neural_network_csv(dv, dir)) return {0.0};
 
         //  3) Run the apptainer instance.
-        //  Put the csv directory as a parameter - DONE
+        //  Put the csv directory for neural network dir as a parameter - INCOMPLETE - need to fix this in ./launch.sh
         //  Put the output log directory as a parameter - DONE
 
         //  3a) Launch Mission - IN PROGRESS
