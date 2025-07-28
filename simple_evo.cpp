@@ -156,6 +156,11 @@ struct rescue_problem {
         return true;
     }
 
+    // We will likely need a method for re-configuring the rescue_problem
+    // in between generations when we have stochastic elements in our
+    // problem - like randomly spawning swimmers
+    // void set_configuration();
+
     // Implementation of the objective function.
     vector_double fitness(const vector_double &dv) const
     {
@@ -187,20 +192,33 @@ struct rescue_problem {
         if (!write_neural_network_csv(dv, dir)) return {0.0};
 
         //  3) Run the apptainer instance.
-        //  Put the csv directory as a parameter
-        //  Put the output log directory as a parameter
-        
+        //  Put the csv directory as a parameter - DONE
+        //  Put the output log directory as a parameter - DONE
 
-        //  3a) Launch Mission
-        //  3b) Auto-deploy when ready
+        //  3a) Launch Mission - IN PROGRESS
+        //  3b) Auto-deploy when ready - DONE
         //  3c) Hit end condition (all swimmers rescued, vehicle out of bounds, or timeout)
-        //  3d) Stop running moos
+        //  uMayFinish. pMissionMonitor
+
+        // std::system(<apptainer command goes in here>)
+
+        // apptainer exec ....
+        //   inside the exec: ./launch.sh
+        //      inside ./launch.sh: runs pAntler, runs uMayFinish. 
+        // Note: Logs are saved in a shared directory (still accessible after apptainer exits)
+
+        //  3d) Stop running moos - taken care of by uMayFinish
         //  3e) Run post-processing scripts on logs (process_node_reports, filter_duplicate_rows)
-        //  3f) Kill the container
+
+        // apptainer exec ...
+        //   runs post processing scripts
+
+        //  3f) Kill the container - Not necessary because apptainer exec automically kills instance
 
         //  4) Recieve some kind of kill command or stop command from apptainer
         //  Maybe apptainer just exits on its own, and that's how cpp
         //  knows to keep going
+        //  Not necessary because apptainer automatically stops after running exec
 
         //  5) Process the logs (or post-processed info) that were saved to get the fitness
         //  We should end up with something like team_positions.csv
