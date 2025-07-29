@@ -8,6 +8,7 @@
 #include <random>
 #include <stdexcept>
 #include <fstream>
+#include <cstdlib>
 
 #include <pagmo/algorithm.hpp>
 #include <pagmo/algorithms/sga.hpp>
@@ -18,6 +19,11 @@
 static std::mutex cout_mtx;
 
 using namespace pagmo;
+
+// Returns the absolute directory of this cpp file
+std::filesystem::path get_source_dir() {
+    return std::filesystem::canonical(std::filesystem::path(__FILE__)).parent_path();
+}
 
 // Returns the total number of weights for a given neural network structure
 int get_size_of_net(const std::vector<int> &structure) {
@@ -108,6 +114,17 @@ inline double compute_sga_gaussian_param(double lower,
     return desired_step / (upper - lower);
 }
 
+/// Join a list of strings with a given delimiter.
+std::string join(const std::vector<std::string> &parts,
+                 const std::string &delim) {
+    std::ostringstream oss;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (i) oss << delim;
+        oss << parts[i];
+    }
+    return oss.str();
+}
+
 // Rescue problem that will run moos-ivp-learn simulations
 struct rescue_problem {
     std::vector<int> m_structure;
@@ -170,7 +187,8 @@ struct rescue_problem {
 
         //  1) Determine what directory we will be working in
         //  Likely something like $HOME/hpc-share/tmp/slurm-<job-id>/process-<process-id>/thread-<thread-id>/
-        std::string home = std::getenv("HOME");
+        std::string host_home = std::getenv("HOME");
+        std::cout << host_home << std::endl;
 
         const char *sidchar = std::getenv("SLURM_JOB_ID");
         std::string sid = sidchar ? sidchar : "none";   
@@ -183,17 +201,53 @@ struct rescue_problem {
         pid_t process_id = getpid();
         std::string pid = std::to_string(process_id);
 
-        std::string dir = home + "/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid;
-        std::cout << "dir: " << dir << std::endl;
-        std::filesystem::create_directories(dir);
+        std::string host_workdir = host_home+"/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid+"/";
+        std::string apptainer_workdir = "/home/moos/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid+"/";
+        std::cout << "host_workdir: " << host_workdir << std::endl;
+        std::filesystem::create_directories(host_workdir);
+
+        std::filesystem::path source_dir = get_source_dir();
+        std::filesystem::path apptainer_path = source_dir / "apptainer" / "ubuntu_20.04_ivp_2680_learn.sif";
+
+        std::cout << "source dir: " << get_source_dir() << std::endl;
     
         //  2) Set up the directory
         //  Write out neural network csv parameters to a csv file in that directory
-        if (!write_neural_network_csv(dv, dir)) return {0.0};
+        if (!write_neural_network_csv(dv, host_workdir)) return {0.0};
 
         //  3) Run the apptainer instance.
-        //  Put the csv directory for neural network dir as a parameter - INCOMPLETE - need to fix this in ./launch.sh
-        //  Put the output log directory as a parameter - DONE
+        // Build launch command for moos
+        std::vector<std::string> launch_args = {
+            "10", // timewarp
+            "--xlaunched",
+            "--logdir="+apptainer_workdir+"logs/",
+            "--trim",
+            "--neural_network_dir="+apptainer_workdir+"neural_networks/",
+            "--uMayFinish",
+            "--nogui",
+            "--rescuebehavior=NeuralNetwork"
+        };
+        std::string launch_cmd = std::string{"./launch.sh "} + join(launch_args, " ");
+        // std::cout << "launch: " << launch_cmd << std::endl;
+
+        // Build apptainer exec command for launching mission
+        // std::string exec = std::"apptainer exec apptainer/ubuntu_20.04_ivp_2680_learn.sif /bin/bash -c"
+        std::vector<std::string> exec_pieces = {
+            "apptainer exec",
+            "--bind "+host_home+"/hpc-share:/home/moos/hpc-share",
+            "--writable-tmpfs",
+            apptainer_path.string(),
+            "/bin/bash -c "
+        };
+        std::string exec_cmd = join(exec_pieces, " ");
+        std::vector<std::string> apptainer_cmds = {
+            "cd /home/moos/moos-ivp-learn/missions/alpha_learn",
+            "echo \'x=13.0,y=-10.0,heading=181\' > vpositions.txt",
+            launch_cmd
+        };
+        std::string apptainer_exec_cmd = exec_cmd + "\"" + join(apptainer_cmds, " && ") + "\"";
+        std::cout << "app: " << apptainer_exec_cmd << std::endl;
+        std::system(apptainer_exec_cmd.c_str());
 
         //  3a) Launch Mission - IN PROGRESS
         //  3b) Auto-deploy when ready - DONE
@@ -252,17 +306,17 @@ int main()
     std::vector<std::vector<double>> in_action_bounds = {{0.0, 1.0}, {-180.0, 180.0}};
     problem prob{rescue_problem{in_structure, in_action_bounds}};
 
-    std::cout << "Pagmo will use up to "
-        << std::thread::hardware_concurrency()
-        << " threads.\n";
+    // std::cout << "Pagmo will use up to "
+    //     << std::thread::hardware_concurrency()
+    //     << " threads.\n";
 
     // Compute the value of the objective function
     int num_weights = get_size_of_net(in_structure);
     std::vector<double> example_weights(num_weights, 1.0);
-    std::cout << "Value of the objfun in (1, 2, 3, 4): " << prob.fitness(example_weights)[0] << '\n';
+    // std::cout << "Value of the objfun in (1, 2, 3, 4): " << prob.fitness(example_weights)[0] << '\n';
 
     // Print p to screen.
-    std::cout << prob << '\n';
+    // std::cout << prob << '\n';
 
     // Configure SGA
     //    - 200 generations
@@ -291,7 +345,7 @@ int main()
     algorithm algo{sga_setup};
 
     // Create a population of 50 individuals for the problem.
-    population pop = generate_initial_population(prob, 50, -1.0, +1.0, seed);
+    population pop = generate_initial_population(prob, 10, -1.0, +1.0, seed);
 
     // Evolve the population using the algorithm.
     pop = algo.evolve(pop);
