@@ -4,7 +4,7 @@
 #include <thread>
 #include <mutex>
 #include <sstream>
-#include <iomanip>  // for std::setprecision
+#include <iomanip>  // for setprecision
 #include <random>
 #include <stdexcept>
 #include <fstream>
@@ -16,17 +16,63 @@
 #include <pagmo/population.hpp>
 #include <pagmo/batch_evaluators/thread_bfe.hpp>
 
-static std::mutex cout_mtx;
-
+using namespace std;
 using namespace pagmo;
 
+static mutex cout_mtx;
+
+// For storing points
+struct XYPoint {
+    double x;
+    double y;
+
+    // Constructor with x,y values
+    XYPoint(double x_val, double y_val) : x(x_val), y(y_val) {}
+};
+
+// Function to read CSV and return vector of points
+pair<vector<XYPoint>, bool> read_xy_csv(const string& filepath) {
+    vector<XYPoint> points;
+    bool success = true;
+    ifstream file(filepath);
+    
+    if (!file.is_open()) {
+        return {points, false};
+    }
+
+    string line;
+    // Skip header line
+    getline(file, line);
+    
+    // Read data lines
+    while (getline(file, line)) {
+        stringstream ss(line);
+        string x_str, y_str;
+        
+        // Split line by comma
+        if (getline(ss, x_str, ',') && getline(ss, y_str, ',')) {
+            try {
+                XYPoint point;
+                point.x = stod(x_str);
+                point.y = stod(y_str);
+                points.push_back(point);
+            } catch (const exception& e) {
+                // There was a problem reading the file
+                success = false;
+                continue;
+            }
+        }
+    }
+    return {points, success};
+}
+
 // Returns the absolute directory of this cpp file
-std::filesystem::path get_source_dir() {
-    return std::filesystem::canonical(std::filesystem::path(__FILE__)).parent_path();
+filesystem::path get_source_dir() {
+    return filesystem::canonical(filesystem::path(__FILE__)).parent_path();
 }
 
 // Returns the total number of weights for a given neural network structure
-int get_size_of_net(const std::vector<int> &structure) {
+int get_size_of_net(const vector<int> &structure) {
     int total_size = 0;
     for (size_t i = 0; i < structure.size() - 1; ++i) {
         total_size += (structure[i] + 1) * structure[i + 1];
@@ -38,9 +84,9 @@ int get_size_of_net(const std::vector<int> &structure) {
 /// @param row      The vector of values to serialize.
 /// @param precision  Number of digits after the decimal point (default: 6).
 /// @return a string like "1.234567,2.000000,3.141593"
-std::string vec_double_to_str(const std::vector<double> &row, int precision = 6) {
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(precision);
+string vec_double_to_str(const vector<double> &row, int precision = 6) {
+    ostringstream oss;
+    oss << fixed << setprecision(precision);
     for (size_t i = 0; i < row.size(); ++i) {
         if (i) {
             oss << ',';          // comma delimiter
@@ -53,9 +99,9 @@ std::string vec_double_to_str(const std::vector<double> &row, int precision = 6)
 /// Convert a vector of ints into a CSV line (no newline appended).
 /// @param row  The vector of integer values to serialize.
 /// @return     A string like "1,2,3,4"
-std::string vec_int_to_str(const std::vector<int> &row) {
-    std::ostringstream oss;
-    for (std::size_t i = 0; i < row.size(); ++i) {
+string vec_int_to_str(const vector<int> &row) {
+    ostringstream oss;
+    for (size_t i = 0; i < row.size(); ++i) {
         if (i) {
             oss << ',';  // comma delimiter
         }
@@ -74,25 +120,25 @@ std::string vec_int_to_str(const std::vector<int> &row) {
 /// @returns         A Pagmo population of size pop_size.
 pagmo::population generate_initial_population(
     const pagmo::problem &prob,
-    std::size_t pop_size,
+    size_t pop_size,
     double low = -1.0,
     double high = +1.0,
     unsigned seed = std::random_device{}()
 ) {
     // RNG & distribution for sampling in [low, high]
-    std::mt19937_64 rng{seed};
-    std::uniform_real_distribution<double> dist{low, high};
+    mt19937_64 rng{seed};
+    uniform_real_distribution<double> dist{low, high};
 
     // Problem dimension
-    const std::size_t dim = prob.get_nx();
+    const size_t dim = prob.get_nx();
 
     // Start with an empty population
     pagmo::population pop{prob, 0u};
 
     // Sample and push each individual
-    for (std::size_t i = 0; i < pop_size; ++i) {
+    for (size_t i = 0; i < pop_size; ++i) {
         pagmo::vector_double x(dim);
-        for (std::size_t d = 0; d < dim; ++d) {
+        for (size_t d = 0; d < dim; ++d) {
             x[d] = dist(rng);
         }
         pop.push_back(x);
@@ -104,20 +150,20 @@ pagmo::population generate_initial_population(
 /// Compute the SGA Gaussian‐mutation parameter m_param_m required
 /// to get a per‐gene mutation standard deviation of `desired_step`,
 /// given your variable’s [lower, upper] bounds.
-/// @throws std::invalid_argument if upper <= lower
+/// @throws invalid_argument if upper <= lower
 inline double compute_sga_gaussian_param(double lower,
                                          double upper,
                                          double desired_step) {
     if (upper <= lower) {
-        throw std::invalid_argument{"compute_sga_gaussian_param: upper must exceed lower"};
+        throw invalid_argument{"compute_sga_gaussian_param: upper must exceed lower"};
     }
     return desired_step / (upper - lower);
 }
 
 /// Join a list of strings with a given delimiter.
-std::string join(const std::vector<std::string> &parts,
-                 const std::string &delim) {
-    std::ostringstream oss;
+string join(const vector<string> &parts,
+                 const string &delim) {
+    ostringstream oss;
     for (size_t i = 0; i < parts.size(); ++i) {
         if (i) oss << delim;
         oss << parts[i];
@@ -127,39 +173,39 @@ std::string join(const std::vector<std::string> &parts,
 
 // Rescue problem that will run moos-ivp-learn simulations
 struct rescue_problem {
-    std::vector<int> m_structure;
-    std::vector<std::vector<double>> m_action_bounds;
+    vector<int> m_structure;
+    vector<vector<double>> m_action_bounds;
     int m_num_weights = 0;
-    std::vector<double> m_lower_weight_bounds;
-    std::vector<double> m_upper_weight_bounds;
+    vector<double> m_lower_weight_bounds;
+    vector<double> m_upper_weight_bounds;
 
     rescue_problem() : m_structure({}), m_action_bounds({}) {}
     rescue_problem(
-        const std::vector<int> &structure, 
-        const std::vector<std::vector<double>> &action_bounds
+        const vector<int> &structure, 
+        const vector<vector<double>> &action_bounds
     ) : m_structure(structure), m_action_bounds(action_bounds) {
         m_num_weights = get_size_of_net(m_structure);
-        m_lower_weight_bounds = std::vector<double>(m_num_weights, -1e19);
-        m_upper_weight_bounds = std::vector<double>(m_num_weights, 1e19);
+        m_lower_weight_bounds = vector<double>(m_num_weights, -1e19);
+        m_upper_weight_bounds = vector<double>(m_num_weights, 1e19);
     }
 
-    bool write_neural_network_csv(const vector_double &dv, std::string dir) const {
-        std::string weights_str = vec_double_to_str(dv, 3);
-        std::string structure_str = vec_int_to_str(m_structure);
-        std::string action_bounds_str = vec_double_to_str(m_action_bounds[0], 3) + "," + vec_double_to_str(m_action_bounds[1], 3);
+    bool write_neural_network_csv(const vector_double &dv, string dir) const {
+        string weights_str = vec_double_to_str(dv, 3);
+        string structure_str = vec_int_to_str(m_structure);
+        string action_bounds_str = vec_double_to_str(m_action_bounds[0], 3) + "," + vec_double_to_str(m_action_bounds[1], 3);
 
-        // std::cout << weights_str << std::endl;
-        // std::cout << structure_str << std::endl;
-        // std::cout << action_bounds_str << std::endl;
+        // cout << weights_str << endl;
+        // cout << structure_str << endl;
+        // cout << action_bounds_str << endl;
 
-        std::string neural_network_dir = dir + "/neural_network_config.csv";
-        std::filesystem::path csv_file = neural_network_dir;
+        string neural_network_dir = dir + "/neural_network_config.csv";
+        filesystem::path csv_file = neural_network_dir;
 
         // return {0.0};
 
-        std::ofstream ofs(csv_file, std::ios::out | std::ios::trunc);
+        ofstream ofs(csv_file, ios::out | ios::trunc);
         if (!ofs) {
-            std::cerr << "Error: cannot open " << csv_file << " for writing\n";
+            cerr << "Error: cannot open " << csv_file << " for writing\n";
             return false;
         }
 
@@ -182,57 +228,64 @@ struct rescue_problem {
     vector_double fitness(const vector_double &dv) const
     {
         // Looking into multi-threading
-        std::lock_guard<std::mutex> lock(cout_mtx);
-        std::cout << "fitness() on thread " << std::this_thread::get_id() << "\n";
+        lock_guard<mutex> lock(cout_mtx);
+        // cout << "fitness() on thread " << this_thread::get_id() << "\n";
 
         //  1) Determine what directory we will be working in
         //  Likely something like $HOME/hpc-share/tmp/slurm-<job-id>/process-<process-id>/thread-<thread-id>/
-        std::string host_home = std::getenv("HOME");
-        std::cout << host_home << std::endl;
 
-        const char *sidchar = std::getenv("SLURM_JOB_ID");
-        std::string sid = sidchar ? sidchar : "none";   
+        const char *sidchar = getenv("SLURM_JOB_ID");
+        string sid = sidchar ? sidchar : "none";   
 
-        std::thread::id thread_id = std::this_thread::get_id();
-        std::ostringstream oss;
+        thread::id thread_id = this_thread::get_id();
+        ostringstream oss;
         oss << thread_id;
-        std::string tid = oss.str();
+        string tid = oss.str();
 
         pid_t process_id = getpid();
-        std::string pid = std::to_string(process_id);
+        string pid = to_string(process_id);
 
-        std::string host_workdir = host_home+"/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid+"/";
-        std::string apptainer_workdir = "/home/moos/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid+"/";
-        std::cout << "host_workdir: " << host_workdir << std::endl;
-        std::filesystem::create_directories(host_workdir);
+        string host_home = getenv("HOME");
+        // cout << host_home << endl;
+        string host_workdir = host_home+"/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid+"/";
+        string host_log_dir = host_workdir+"logs/";
 
-        std::filesystem::path source_dir = get_source_dir();
-        std::filesystem::path apptainer_path = source_dir / "apptainer" / "ubuntu_20.04_ivp_2680_learn.sif";
+        string apptainer_workdir = "/home/moos/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid+"/";
+        string apptainer_log_dir = apptainer_workdir+"logs/";
 
-        std::cout << "source dir: " << get_source_dir() << std::endl;
+        // cout << "host_workdir: " << host_workdir << endl;
+        filesystem::create_directories(host_log_dir);
+
+        filesystem::path source_dir = get_source_dir();
+        filesystem::path apptainer_path = source_dir / "apptainer" / "ubuntu_20.04_ivp_2680_learn.sif";
+
+        // cout << "source dir: " << get_source_dir() << endl;
     
         //  2) Set up the directory
         //  Write out neural network csv parameters to a csv file in that directory
         if (!write_neural_network_csv(dv, host_workdir)) return {0.0};
+        vector<XYPoint> swimmer_pts = {XYPoint(13.0, 10.0)};
 
         //  3) Run the apptainer instance.
         // Build launch command for moos
-        std::vector<std::string> launch_args = {
+
+        vector<string> launch_args = {
             "10", // timewarp
             "--xlaunched",
-            "--logdir="+apptainer_workdir+"logs/",
+            "--logdir="+apptainer_log_dir,
             "--trim",
             "--neural_network_dir="+apptainer_workdir+"neural_networks/",
             "--uMayFinish",
             "--nogui",
-            "--rescuebehavior=NeuralNetwork"
+            "--rescuebehavior=NeuralNetwork",
+            "--autodeploy"
         };
-        std::string launch_cmd = std::string{"./launch.sh "} + join(launch_args, " ");
-        // std::cout << "launch: " << launch_cmd << std::endl;
+        string launch_cmd = string{"./launch.sh "} + join(launch_args, " ");
+        // cout << "launch: " << launch_cmd << endl;
 
         // Build apptainer exec command for launching mission
-        // std::string exec = std::"apptainer exec apptainer/ubuntu_20.04_ivp_2680_learn.sif /bin/bash -c"
-        std::vector<std::string> exec_pieces = {
+        // string exec = "apptainer exec apptainer/ubuntu_20.04_ivp_2680_learn.sif /bin/bash -c"
+        vector<string> exec_pieces = {
             "apptainer exec",
             "--cleanenv",
             "--containall",
@@ -245,22 +298,32 @@ struct rescue_problem {
             apptainer_path.string(),
             "/bin/bash -c "
         };
-        std::string exec_cmd = join(exec_pieces, " ");
-        std::vector<std::string> apptainer_cmds = {
+        string exec_cmd = join(exec_pieces, " ");
+        string process_node_reports_cmd = "process_node_reports "+\
+            apptainer_log_dir+"XLOG_SHORESIDE/XLOG_SHORESIDE.alog "+\
+            apptainer_log_dir+"abe_positions.csv";
+        string filter_node_reports_cmd = "csv_filter_duplicate_rows "+\
+            apptainer_log_dir+"abe_positions.csv "+\
+            apptainer_log_dir+"abe_positions_filtered.csv";
+        vector<string> apptainer_cmds = {
             "cd /home/moos/moos-ivp-learn/missions/alpha_learn",
             "echo \'x=13.0,y=-10.0,heading=181\' > vpositions.txt",
-            launch_cmd
+            launch_cmd,
+            process_node_reports_cmd,
+            filter_node_reports_cmd
         };
-        std::string apptainer_exec_cmd = exec_cmd + "\"" + join(apptainer_cmds, " && ") + "\"";
-        std::cout << "app: " << apptainer_exec_cmd << std::endl;
-        std::system(apptainer_exec_cmd.c_str());
+        string apptainer_exec_cmd = exec_cmd + "\"" + join(apptainer_cmds, " && ") + "\"";
+        string redirect_cmd = " > "+host_log_dir+"apptainer_out.log 2>&1";
+        string apptainer_exec_w_redirect_cmd = apptainer_exec_cmd + redirect_cmd;
+        // cout << "Apptainer command: " << apptainer_exec_w_redirect_cmd << endl;
+        system(apptainer_exec_w_redirect_cmd.c_str());
 
         //  3a) Launch Mission - IN PROGRESS
         //  3b) Auto-deploy when ready - DONE
         //  3c) Hit end condition (all swimmers rescued, vehicle out of bounds, or timeout)
         //  uMayFinish. pMissionMonitor
 
-        // std::system(<apptainer command goes in here>)
+        // system(<apptainer command goes in here>)
 
         // apptainer exec ....
         //   inside the exec: ./launch.sh
@@ -282,10 +345,18 @@ struct rescue_problem {
 
         //  5) Process the logs (or post-processed info) that were saved to get the fitness
         //  We should end up with something like team_positions.csv
+        pair<vector<XYPoint>, bool> result = read_xy_csv("path/to/file.csv");
+        vector<XYPoint> vehicle_pts = result.first;
+        bool success = result.second;
+        if (!success) {
+            cout << "Failed to read points from file\n";
+        }
+
+
         return {0.0};
     }
     // Implementation of the box bounds.
-    std::pair<vector_double, vector_double> get_bounds() const
+    pair<vector_double, vector_double> get_bounds() const
     {
         // This is how pagmo knows the number of parameters
         // in the solution space.
@@ -308,21 +379,21 @@ int main()
     // 1 - Instantiate a pagmo problem constructing it from a UDP
     // (i.e., a user-defined problem, in this case the 30-dimensional
     // generalised Schwefel test function).
-    std::vector<int> in_structure = {8,10,2};
-    std::vector<std::vector<double>> in_action_bounds = {{0.0, 1.0}, {-180.0, 180.0}};
+    vector<int> in_structure = {8,10,2};
+    vector<vector<double>> in_action_bounds = {{0.0, 1.0}, {-180.0, 180.0}};
     problem prob{rescue_problem{in_structure, in_action_bounds}};
 
-    // std::cout << "Pagmo will use up to "
-    //     << std::thread::hardware_concurrency()
+    // cout << "Pagmo will use up to "
+    //     << thread::hardware_concurrency()
     //     << " threads.\n";
 
     // Compute the value of the objective function
     int num_weights = get_size_of_net(in_structure);
-    std::vector<double> example_weights(num_weights, 1.0);
-    // std::cout << "Value of the objfun in (1, 2, 3, 4): " << prob.fitness(example_weights)[0] << '\n';
+    vector<double> example_weights(num_weights, 1.0);
+    // cout << "Value of the objfun in (1, 2, 3, 4): " << prob.fitness(example_weights)[0] << '\n';
 
     // Print p to screen.
-    // std::cout << prob << '\n';
+    // cout << prob << '\n';
 
     // Configure SGA
     //    - 200 generations
@@ -330,7 +401,7 @@ int main()
     //    - 20% per‑gene mutation
     //    - uniform mutation (redraw within [lb,ub])
     //    - tournament size 3
-    std::pair<pagmo::vector_double, pagmo::vector_double> bounds = prob.get_bounds();
+    pair<pagmo::vector_double, pagmo::vector_double> bounds = prob.get_bounds();
     const pagmo::vector_double &lower = bounds.first;
     const pagmo::vector_double &upper = bounds.second;
     double desired_sigma = 1.0;  // mutation step
@@ -357,5 +428,5 @@ int main()
     pop = algo.evolve(pop);
 
     // Print the fitness of the best solution.
-    std::cout << pop.champion_f()[0] << '\n';
+    cout << pop.champion_f()[0] << '\n';
 }
