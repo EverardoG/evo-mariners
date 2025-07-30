@@ -315,9 +315,6 @@ struct rescue_problem {
     // Implementation of the objective function.
     vector_double fitness(const vector_double &dv) const
     {
-        // cout << "Evaluating fitness for generation: " << m_current_generation << endl;
-        return {200.0};
-
         // Check if we should abort early
         if (!running) {
             return {100.0};
