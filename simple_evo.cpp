@@ -125,8 +125,8 @@ bool write_vpositions_txt(const vector<XYPose>& vehicle_poses, const string& fil
     return true;
 }
 
-double calculate_rescue_score(const vector<XYPoint>& vehicle_pts, const vector<XYPoint>& swimmer_pts, const double& rescue_rng_max = 5.0) {
-    double total_score = 0.0;
+int compute_swimmers_rescued(const vector<XYPoint>& vehicle_pts, const vector<XYPoint>& swimmer_pts, const double& rescue_rng_max = 5.0) {
+    int total_swimmers = 0;
     
     // For each swimmer
     for (const auto& swimmer : swimmer_pts) {
@@ -139,14 +139,14 @@ double calculate_rescue_score(const vector<XYPoint>& vehicle_pts, const vector<X
 
             // Add to the score if we rescued this swimmer
             if (distance < rescue_rng_max) {
-                total_score += 1.0;
+                total_swimmers++;
                 // Skip remaining vehicle points, go to next swimmer
                 break;
             }
         }
     }
     
-    return total_score;
+    return total_swimmers;
 }
 
 // Returns the absolute directory of this cpp file
@@ -312,7 +312,7 @@ struct rescue_problem {
     {
         // Check if we should abort early
         if (!running) {
-            return {0.0};
+            return {100.0};
         }
 
         // Looking into multi-threading
@@ -356,9 +356,9 @@ struct rescue_problem {
 
         string host_swimmers_txt_dir = host_workdir+"swimmers.txt";
         string app_swimmers_txt_dir = apptainer_workdir+"swimmers.txt";
-        if (!write_swimmers_txt(swimmer_pts, host_swimmers_txt_dir)) return {0.0};
-        if (!write_vpositions_txt(vehicle_poses, host_workdir+"vpositions.txt")) return {0.0};
-        if (!write_neural_network_csv(dv, host_workdir)) return {0.0};
+        if (!write_swimmers_txt(swimmer_pts, host_swimmers_txt_dir)) return {101.0};
+        if (!write_vpositions_txt(vehicle_poses, host_workdir+"vpositions.txt")) return {102.0};
+        if (!write_neural_network_csv(dv, host_workdir)) return {103.0};
         //  3) Run the apptainer instance.
         // Build launch command for moos
 
@@ -431,23 +431,23 @@ struct rescue_problem {
                         kill(child_pid, SIGKILL);
                         waitpid(child_pid, &status, 0);  // Clean up zombie
                     }
-                    return {0.0};  // Return early
+                    return {104.0};  // Return early
                 }
                 sleep(1);  // Check every second
             }
             
             if (result == -1) {
                 // Error in waitpid
-                return {0.0};
+                return {105.0};
             }
         } else {
             // Fork failed
-            return {0.0};
+            return {106.0};
         }
 
         // Check again before processing results
         if (!running) {
-            return {0.0};
+            return {107.0};
         }
 
         //  5) Process the logs (or post-processed info) that were saved to get the fitness
@@ -455,11 +455,12 @@ struct rescue_problem {
         pair<vector<XYPoint>, bool> result = read_xy_csv("path/to/file.csv");
         vector<XYPoint> vehicle_pts = result.first;
         bool success = result.second;
-        if (!success) return {0.0};
+        if (!success) return {108.0};
 
-        double score = calculate_rescue_score(vehicle_pts, swimmer_pts);
+        int swimmers_rescued = compute_swimmers_rescued(vehicle_pts, swimmer_pts);
+        double fitness_score = -static_cast<double>(swimmers_rescued);
 
-        return {score};
+        return {fitness_score};
     }
     // Implementation of the box bounds.
     pair<vector_double, vector_double> get_bounds() const
