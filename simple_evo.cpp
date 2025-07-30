@@ -9,6 +9,8 @@
 #include <stdexcept>
 #include <fstream>
 #include <cstdlib>
+#include <csignal>
+#include <sys/wait.h>  // for waitpid
 
 #include <pagmo/algorithm.hpp>
 #include <pagmo/algorithms/sga.hpp>
@@ -20,6 +22,17 @@ using namespace std;
 using namespace pagmo;
 
 static mutex cout_mtx;
+
+// Global flag for graceful shutdown
+volatile sig_atomic_t running = 1;
+
+// Signal handler for SIGINT (Ctrl+C)
+void signalHandler(int signal) {
+    if (signal == SIGINT) {
+        running = 0;
+        std::cout << "\nReceived Ctrl+C, shutting down gracefully..." << std::endl;
+    }
+}
 
 // For storing points
 struct XYPoint {
@@ -297,6 +310,11 @@ struct rescue_problem {
     // Implementation of the objective function.
     vector_double fitness(const vector_double &dv) const
     {
+        // Check if we should abort early
+        if (!running) {
+            return {0.0};
+        }
+
         // Looking into multi-threading
         lock_guard<mutex> lock(cout_mtx);
         // cout << "fitness() on thread " << this_thread::get_id() << "\n";
@@ -391,32 +409,46 @@ struct rescue_problem {
         string redirect_cmd = " > "+host_log_dir+"apptainer_out.log 2>&1";
         string apptainer_exec_w_redirect_cmd = apptainer_exec_cmd + redirect_cmd;
         // cout << "Apptainer command: " << apptainer_exec_w_redirect_cmd << endl;
-        system(apptainer_exec_w_redirect_cmd.c_str());
+        
+        // Execute with timeout and signal handling
+        pid_t child_pid = fork();
+        if (child_pid == 0) {
+            // Child process: execute the command
+            execl("/bin/sh", "sh", "-c", apptainer_exec_w_redirect_cmd.c_str(), (char*)NULL);
+            exit(1);  // If execl fails
+        } else if (child_pid > 0) {
+            // Parent process: wait for child with periodic checks
+            int status;
+            pid_t result;
+            
+            // Poll every second to check if we should terminate
+            while ((result = waitpid(child_pid, &status, WNOHANG)) == 0) {
+                if (!running) {
+                    // Send SIGTERM first, then SIGKILL if needed
+                    kill(child_pid, SIGTERM);
+                    sleep(2);  // Give it 2 seconds to terminate gracefully
+                    if (waitpid(child_pid, &status, WNOHANG) == 0) {
+                        kill(child_pid, SIGKILL);
+                        waitpid(child_pid, &status, 0);  // Clean up zombie
+                    }
+                    return {0.0};  // Return early
+                }
+                sleep(1);  // Check every second
+            }
+            
+            if (result == -1) {
+                // Error in waitpid
+                return {0.0};
+            }
+        } else {
+            // Fork failed
+            return {0.0};
+        }
 
-        //  3a) Launch Mission - IN PROGRESS
-        //  3b) Auto-deploy when ready - DONE
-        //  3c) Hit end condition (all swimmers rescued, vehicle out of bounds, or timeout)
-        //  uMayFinish. pMissionMonitor
-
-        // system(<apptainer command goes in here>)
-
-        // apptainer exec ....
-        //   inside the exec: ./launch.sh
-        //      inside ./launch.sh: runs pAntler, runs uMayFinish. 
-        // Note: Logs are saved in a shared directory (still accessible after apptainer exits)
-
-        //  3d) Stop running moos - taken care of by uMayFinish
-        //  3e) Run post-processing scripts on logs (process_node_reports, filter_duplicate_rows)
-
-        // apptainer exec ...
-        //   runs post processing scripts
-
-        //  3f) Kill the container - Not necessary because apptainer exec automically kills instance
-
-        //  4) Recieve some kind of kill command or stop command from apptainer
-        //  Maybe apptainer just exits on its own, and that's how cpp
-        //  knows to keep going
-        //  Not necessary because apptainer automatically stops after running exec
+        // Check again before processing results
+        if (!running) {
+            return {0.0};
+        }
 
         //  5) Process the logs (or post-processed info) that were saved to get the fitness
         //  We should end up with something like team_positions.csv
@@ -446,6 +478,9 @@ struct rescue_problem {
 
 int main()
 {
+    // Register signal handler
+    std::signal(SIGINT, signalHandler);
+
     // seeding
     unsigned int seed = 42u;
     pagmo::random_device::set_seed(seed); // Set a fixed seed for deterministic results
@@ -498,9 +533,33 @@ int main()
     // Create a population of 50 individuals for the problem.
     population pop = generate_initial_population(prob, 10, -1.0, +1.0, seed);
 
-    // Evolve the population using the algorithm.
-    pop = algo.evolve(pop);
+    // Evolve the population using the algorithm with graceful shutdown support
+    const unsigned max_generations = 50u;
+    for (unsigned gen = 0; gen < max_generations && running; ++gen) {
+        cout << "Generation " << (gen + 1) << "/" << max_generations << " - Best fitness: " << pop.champion_f()[0] << endl;
+        
+        // Check if we should stop
+        if (!running) {
+            cout << "Evolution interrupted at generation " << (gen + 1) << endl;
+            break;
+        }
+        
+        // Simplified: create a new single-generation algorithm
+        pagmo::sga single_gen_sga{
+            1u,           // Only 1 generation
+            0.9,          // crossover probability
+            1.0,          // eta_c
+            0.2,          // mutation probability
+            param_m,      // mutation parameter
+            3u,           // tournament size
+            "exponential", // crossover type
+            "gaussian",   // mutation type
+            "tournament"  // selection type
+        };
+        algorithm single_gen_algo{single_gen_sga};
+        pop = single_gen_algo.evolve(pop);
+    }
 
     // Print the fitness of the best solution.
-    cout << pop.champion_f()[0] << '\n';
+    cout << "Final best fitness: " << pop.champion_f()[0] << '\n';
 }
