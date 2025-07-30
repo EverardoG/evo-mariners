@@ -234,6 +234,12 @@ struct rescue_problem {
         // std::string exec = std::"apptainer exec apptainer/ubuntu_20.04_ivp_2680_learn.sif /bin/bash -c"
         std::vector<std::string> exec_pieces = {
             "apptainer exec",
+            "--cleanenv",
+            "--containall",
+            "--contain",
+            "--net",
+            "--network=fakeroot",
+            "--fakeroot",
             "--bind "+host_home+"/hpc-share:/home/moos/hpc-share",
             "--writable-tmpfs",
             apptainer_path.string(),

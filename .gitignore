@@ -49,3 +49,4 @@ overlays/*.ext3
 
 # Ignore apptainer sifs
 *.sif
+.fuse*

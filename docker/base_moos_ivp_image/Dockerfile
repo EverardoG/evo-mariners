@@ -11,7 +11,7 @@ ENV IVP_BEHAVIOR_DIRS="/home/moos/moos-ivp/lib"
 # Install required MOOS dependencies
 RUN apt-get update -y && \
    DEBIAN_FRONTEND=noninteractive \
-   apt-get install -y cmake build-essential git emacs && \
+   apt-get install -y cmake build-essential git emacs psmisc && \
    apt-get clean
 
 # Make a user to run the MOOS apps and set as default user
