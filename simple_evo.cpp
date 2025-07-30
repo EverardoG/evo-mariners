@@ -261,6 +261,7 @@ struct rescue_problem {
     int m_num_weights = 0;
     vector<double> m_lower_weight_bounds;
     vector<double> m_upper_weight_bounds;
+    int m_current_generation = 0; // Track the current generation
 
     rescue_problem() : m_structure({}), m_action_bounds({}) {}
     rescue_problem(
@@ -270,6 +271,10 @@ struct rescue_problem {
         m_num_weights = get_size_of_net(m_structure);
         m_lower_weight_bounds = vector<double>(m_num_weights, -1e19);
         m_upper_weight_bounds = vector<double>(m_num_weights, 1e19);
+    }
+
+    void set_generation(int generation) {
+        m_current_generation = generation;
     }
 
     bool write_neural_network_csv(const vector_double &dv, string dir) const {
@@ -310,6 +315,9 @@ struct rescue_problem {
     // Implementation of the objective function.
     vector_double fitness(const vector_double &dv) const
     {
+        // cout << "Evaluating fitness for generation: " << m_current_generation << endl;
+        return {200.0};
+
         // Check if we should abort early
         if (!running) {
             return {100.0};
@@ -534,18 +542,33 @@ int main()
     // Create a population of 50 individuals for the problem.
     population pop = generate_initial_population(prob, 10, -1.0, +1.0, seed);
 
+    // cout << "Generation " << gen << "/" << max_generations << " - Best fitness: " << pop.champion_f()[0] << endl;
+
     // Evolve the population using the algorithm with graceful shutdown support
     const unsigned max_generations = 50u;
-    for (unsigned gen = 0; gen < max_generations && running; ++gen) {
-        cout << "Generation " << (gen + 1) << "/" << max_generations << " - Best fitness: " << pop.champion_f()[0] << endl;
-        
+    for (unsigned gen = 1; gen <= max_generations && running; ++gen) { // Start at generation 1
         // Check if we should stop
         if (!running) {
-            cout << "Evolution interrupted at generation " << (gen + 1) << endl;
+            cout << "Evolution interrupted at generation " << gen << endl;
             break;
         }
-        
-        // Simplified: create a new single-generation algorithm
+
+        // Update the rescue problem
+        rescue_problem updated_udp = rescue_problem(in_structure, in_action_bounds);
+        updated_udp.set_generation(gen); // Update generation number
+        problem updated_prob{updated_udp}; // Create updated problem
+
+        // Create a new population with no individuals and the updated problem
+        population updated_pop{updated_prob, 0};
+
+        // Insert individuals from the old population into the new population
+        const auto &decision_vectors = pop.get_x(); // Get all decision vectors
+        const auto &fitness_vectors = pop.get_f(); // Get all fitness vectors
+        for (size_t i = 0; i < pop.size(); ++i) {
+            updated_pop.push_back(decision_vectors[i], fitness_vectors[i]); // Add both decision and fitness vectors
+        }
+
+        // Create a single-generation algorithm
         pagmo::sga single_gen_sga{
             1u,           // Only 1 generation
             0.9,          // crossover probability
@@ -558,7 +581,12 @@ int main()
             "tournament"  // selection type
         };
         algorithm single_gen_algo{single_gen_sga};
-        pop = single_gen_algo.evolve(pop);
+        
+        // Evolve one generation
+        pop = single_gen_algo.evolve(updated_pop);
+
+        // Tell us the champion
+        cout << "Generation " << gen << "/" << max_generations << " - Best fitness: " << pop.champion_f()[0] << endl;
     }
 
     // Print the fitness of the best solution.
