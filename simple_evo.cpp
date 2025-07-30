@@ -30,6 +30,15 @@ struct XYPoint {
     XYPoint(double x_val, double y_val) : x(x_val), y(y_val) {}
 };
 
+// And pose
+struct XYPose : public XYPoint {
+    double heading;
+
+    // Constructor with x,y,heading values
+    XYPose(double x_val, double y_val, double heading_val) 
+        : XYPoint(x_val, y_val), heading(heading_val) {}
+};
+
 // Function to read CSV and return vector of points
 pair<vector<XYPoint>, bool> read_xy_csv(const string& filepath) {
     vector<XYPoint> points;
@@ -52,10 +61,9 @@ pair<vector<XYPoint>, bool> read_xy_csv(const string& filepath) {
         // Split line by comma
         if (getline(ss, x_str, ',') && getline(ss, y_str, ',')) {
             try {
-                XYPoint point;
-                point.x = stod(x_str);
-                point.y = stod(y_str);
-                points.push_back(point);
+                double x_val = stod(x_str);
+                double y_val = stod(y_str);
+                points.push_back(XYPoint(x_val, y_val));
             } catch (const exception& e) {
                 // There was a problem reading the file
                 success = false;
@@ -64,6 +72,68 @@ pair<vector<XYPoint>, bool> read_xy_csv(const string& filepath) {
         }
     }
     return {points, success};
+}
+
+bool write_swimmers_txt(const vector<XYPoint>& swimmer_pts, const string& filepath) {
+    ofstream ofs(filepath, ios::out | ios::trunc);
+    if (!ofs) {
+        cout << "Error: cannot open " << filepath << " for writing\n";
+        return false;
+    }
+
+    for (size_t i = 0; i < swimmer_pts.size(); ++i) {
+        // Format: swimmer = name=p01, x=13, y=10
+        ofs << "swimmer = name=p" 
+            << setfill('0') << setw(2) << (i + 1) 
+            << ", x=" << static_cast<double>(swimmer_pts[i].x)
+            << ", y=" << static_cast<double>(swimmer_pts[i].y)
+            << '\n';
+    }
+
+    ofs.flush();
+    return true;
+}
+
+bool write_vpositions_txt(const vector<XYPose>& vehicle_poses, const string& filepath) {
+    ofstream ofs(filepath, ios::out | ios::trunc);
+    if (!ofs) {
+        cout << "Error: cannot open " << filepath << " for writing\n";
+        return false;
+    }
+
+    for (const auto& pose : vehicle_poses) {
+        ofs << "x=" << pose.x 
+            << ",y=" << pose.y 
+            << ",heading=" << pose.heading 
+            << '\n';
+    }
+
+    ofs.flush();
+    return true;
+}
+
+double calculate_rescue_score(const vector<XYPoint>& vehicle_pts, const vector<XYPoint>& swimmer_pts, const double& rescue_rng_max = 5.0) {
+    double total_score = 0.0;
+    
+    // For each swimmer
+    for (const auto& swimmer : swimmer_pts) {
+        // Find closest vehicle point
+        for (const auto& vehicle : vehicle_pts) {
+            // Calculate Euclidean distance
+            double dx = vehicle.x - swimmer.x;
+            double dy = vehicle.y - swimmer.y;
+            double distance = std::sqrt(dx*dx + dy*dy);
+
+            // Add to the score if we rescued this swimmer
+            if (distance < rescue_rng_max) {
+                total_score += 1.0;
+                // Skip remaining vehicle points, go to next swimmer
+                break;
+            }
+        }
+    }
+    
+    return total_score;
 }
 
 // Returns the absolute directory of this cpp file
@@ -263,9 +333,14 @@ struct rescue_problem {
     
         //  2) Set up the directory
         //  Write out neural network csv parameters to a csv file in that directory
-        if (!write_neural_network_csv(dv, host_workdir)) return {0.0};
         vector<XYPoint> swimmer_pts = {XYPoint(13.0, 10.0)};
+        vector<XYPose> vehicle_poses = {XYPose(13.0,-10.0,181.0)};
 
+        string host_swimmers_txt_dir = host_workdir+"swimmers.txt";
+        string app_swimmers_txt_dir = apptainer_workdir+"swimmers.txt";
+        if (!write_swimmers_txt(swimmer_pts, host_swimmers_txt_dir)) return {0.0};
+        if (!write_vpositions_txt(vehicle_poses, host_workdir+"vpositions.txt")) return {0.0};
+        if (!write_neural_network_csv(dv, host_workdir)) return {0.0};
         //  3) Run the apptainer instance.
         // Build launch command for moos
 
@@ -278,7 +353,8 @@ struct rescue_problem {
             "--uMayFinish",
             "--nogui",
             "--rescuebehavior=NeuralNetwork",
-            "--autodeploy"
+            "--autodeploy",
+            "--swim_file="+app_swimmers_txt_dir
         };
         string launch_cmd = string{"./launch.sh "} + join(launch_args, " ");
         // cout << "launch: " << launch_cmd << endl;
@@ -307,7 +383,6 @@ struct rescue_problem {
             apptainer_log_dir+"abe_positions_filtered.csv";
         vector<string> apptainer_cmds = {
             "cd /home/moos/moos-ivp-learn/missions/alpha_learn",
-            "echo \'x=13.0,y=-10.0,heading=181\' > vpositions.txt",
             launch_cmd,
             process_node_reports_cmd,
             filter_node_reports_cmd
@@ -348,12 +423,11 @@ struct rescue_problem {
         pair<vector<XYPoint>, bool> result = read_xy_csv("path/to/file.csv");
         vector<XYPoint> vehicle_pts = result.first;
         bool success = result.second;
-        if (!success) {
-            cout << "Failed to read points from file\n";
-        }
+        if (!success) return {0.0};
 
+        double score = calculate_rescue_score(vehicle_pts, swimmer_pts);
 
-        return {0.0};
+        return {score};
     }
     // Implementation of the box bounds.
     pair<vector_double, vector_double> get_bounds() const
@@ -372,8 +446,8 @@ struct rescue_problem {
 
 int main()
 {
+    // seeding
     unsigned int seed = 42u;
-
     pagmo::random_device::set_seed(seed); // Set a fixed seed for deterministic results
 
     // 1 - Instantiate a pagmo problem constructing it from a UDP
@@ -407,7 +481,7 @@ int main()
     double desired_sigma = 1.0;  // mutation step
     double param_m = compute_sga_gaussian_param(lower[0], upper[0], desired_sigma);
     pagmo::sga sga_setup{
-        /*gen*/       1u,
+        /*gen*/       50u,
         /*cr*/        0.9,
         /*eta_c*/     1.0,      // SBX index (unused here)
         /*m*/         0.2,      // 20% mutation rate
