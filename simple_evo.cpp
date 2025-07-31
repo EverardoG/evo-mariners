@@ -94,6 +94,9 @@ bool write_swimmers_txt(const vector<XYPoint>& swimmer_pts, const string& filepa
         return false;
     }
 
+    // Write the top line
+    ofs << "poly = pts={60,10:-75.5402,-54.2561:-36.9866,-135.58:98.5536,-71.3241}" << '\n';
+
     for (size_t i = 0; i < swimmer_pts.size(); ++i) {
         // Format: swimmer = name=p01, x=13, y=10
         ofs << "swimmer = name=p" 
@@ -254,6 +257,23 @@ string join(const vector<string> &parts,
     return oss.str();
 }
 
+struct RescueProblemCounter {
+    int m_fitness_call_count = 0; // Counter for fitness calls
+    mutable std::mutex m_fitness_mutex;  // Mutex for thread safety
+
+    int get_and_increment_fitness_call_count() {
+        std::lock_guard<std::mutex> lock(m_fitness_mutex);
+        int current_count = m_fitness_call_count;
+        ++m_fitness_call_count; // Increment after retrieving the current value
+        return current_count;
+    }
+
+    int get_fitness_call_count() const {
+        std::lock_guard<std::mutex> lock(m_fitness_mutex);
+        return m_fitness_call_count;
+    }
+};
+
 // Rescue problem that will run moos-ivp-learn simulations
 struct rescue_problem {
     vector<int> m_structure;
@@ -262,12 +282,15 @@ struct rescue_problem {
     vector<double> m_lower_weight_bounds;
     vector<double> m_upper_weight_bounds;
     int m_current_generation = 0; // Track the current generation
+    int m_fitness_call_count = 0; // Counter for fitness calls
+    RescueProblemCounter *m_counter = nullptr; // Pointer to external counter
 
     rescue_problem() : m_structure({}), m_action_bounds({}) {}
     rescue_problem(
         const vector<int> &structure, 
-        const vector<vector<double>> &action_bounds
-    ) : m_structure(structure), m_action_bounds(action_bounds) {
+        const vector<vector<double>> &action_bounds,
+        RescueProblemCounter *counter = nullptr
+    ) : m_structure(structure), m_action_bounds(action_bounds), m_counter(counter) {
         m_num_weights = get_size_of_net(m_structure);
         m_lower_weight_bounds = vector<double>(m_num_weights, -1e19);
         m_upper_weight_bounds = vector<double>(m_num_weights, 1e19);
@@ -286,7 +309,7 @@ struct rescue_problem {
         // cout << structure_str << endl;
         // cout << action_bounds_str << endl;
 
-        string neural_network_dir = dir + "/neural_network_config.csv";
+        string neural_network_dir = dir + "/neural_network_abe.csv";
         filesystem::path csv_file = neural_network_dir;
 
         // return {0.0};
@@ -315,6 +338,11 @@ struct rescue_problem {
     // Implementation of the objective function.
     vector_double fitness(const vector_double &dv) const
     {
+        int current_count = -1;
+        if (m_counter) {
+            current_count = m_counter->get_and_increment_fitness_call_count(); // Thread-safe increment
+            cout << "Fitness call count: " << current_count << endl;
+        }
         // Check if we should abort early
         if (!running) {
             return {100.0};
@@ -340,14 +368,17 @@ struct rescue_problem {
 
         string host_home = getenv("HOME");
         // cout << host_home << endl;
-        string host_workdir = host_home+"/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid+"/";
+        // string host_workdir = host_home+"/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid+"/";
+        string host_workdir = host_home+"/hpc-share/tmp/slurm-"+sid+"/generation-"+std::to_string(m_current_generation)+"/individual-"+std::to_string(current_count)+"/";
         string host_log_dir = host_workdir+"logs/";
 
-        string apptainer_workdir = "/home/moos/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid+"/";
+        // string apptainer_workdir = "/home/moos/hpc-share/tmp/slurm-"+sid+"/process-"+pid+"/thread-"+tid+"/";
+        string apptainer_workdir = "/home/moos/hpc-share/tmp/slurm-"+sid+"/generation-"+std::to_string(m_current_generation)+"/individual-"+std::to_string(current_count)+"/";
         string apptainer_log_dir = apptainer_workdir+"logs/";
 
         // cout << "host_workdir: " << host_workdir << endl;
         filesystem::create_directories(host_log_dir);
+        // return {200.0};
 
         filesystem::path source_dir = get_source_dir();
         filesystem::path apptainer_path = source_dir / "apptainer" / "ubuntu_20.04_ivp_2680_learn.sif";
@@ -356,7 +387,7 @@ struct rescue_problem {
     
         //  2) Set up the directory
         //  Write out neural network csv parameters to a csv file in that directory
-        vector<XYPoint> swimmer_pts = {XYPoint(13.0, 10.0)};
+        vector<XYPoint> swimmer_pts = {XYPoint(12.0, -60.0)};
         vector<XYPose> vehicle_poses = {XYPose(13.0,-10.0,181.0)};
 
         string host_swimmers_txt_dir = host_workdir+"swimmers.txt";
@@ -372,12 +403,13 @@ struct rescue_problem {
             "--xlaunched",
             "--logdir="+apptainer_log_dir,
             "--trim",
-            "--neural_network_dir="+apptainer_workdir+"neural_networks/",
+            "--neural_network_dir="+apptainer_workdir,
             "--uMayFinish",
             "--nogui",
             "--rescuebehavior=NeuralNetwork",
             "--autodeploy",
-            "--swim_file="+app_swimmers_txt_dir
+            "--swim_file="+app_swimmers_txt_dir,
+            "--vpositions="+apptainer_workdir+"vpositions.txt"
         };
         string launch_cmd = string{"./launch.sh "} + join(launch_args, " ");
         // cout << "launch: " << launch_cmd << endl;
@@ -457,7 +489,8 @@ struct rescue_problem {
 
         //  5) Process the logs (or post-processed info) that were saved to get the fitness
         //  We should end up with something like team_positions.csv
-        pair<vector<XYPoint>, bool> result = read_xy_csv("path/to/file.csv");
+        std::string vpositions_csv_dir = host_log_dir+"abe_positions_filtered.csv";
+        pair<vector<XYPoint>, bool> result = read_xy_csv(vpositions_csv_dir);
         vector<XYPoint> vehicle_pts = result.first;
         bool success = result.second;
         if (!success) return {108.0};
@@ -496,7 +529,8 @@ int main()
     // generalised Schwefel test function).
     vector<int> in_structure = {8,10,2};
     vector<vector<double>> in_action_bounds = {{0.0, 1.0}, {-180.0, 180.0}};
-    problem prob{rescue_problem{in_structure, in_action_bounds}};
+    RescueProblemCounter counter;
+    problem prob{rescue_problem{in_structure, in_action_bounds, &counter}};
 
     // cout << "Pagmo will use up to "
     //     << thread::hardware_concurrency()
@@ -551,7 +585,8 @@ int main()
         }
 
         // Update the rescue problem
-        rescue_problem updated_udp = rescue_problem(in_structure, in_action_bounds);
+        RescueProblemCounter counter;
+        rescue_problem updated_udp = rescue_problem(in_structure, in_action_bounds, &counter);
         updated_udp.set_generation(gen); // Update generation number
         problem updated_prob{updated_udp}; // Create updated problem
 
