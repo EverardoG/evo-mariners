@@ -424,7 +424,7 @@ struct rescue_problem {
             "--containall",
             "--contain",
             "--net",
-            "--network=fakeroot",
+            "--network=none",
             "--fakeroot",
             "--bind "+host_home+"/hpc-share:/home/moos/hpc-share",
             "--writable-tmpfs",
