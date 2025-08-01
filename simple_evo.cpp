@@ -402,14 +402,14 @@ struct rescue_problem {
             "10", // timewarp
             "--xlaunched",
             "--logdir="+apptainer_log_dir,
-            "--trim",
             "--neural_network_dir="+apptainer_workdir,
             "--uMayFinish",
             "--nogui",
             "--rescuebehavior=NeuralNetwork",
             "--autodeploy",
             "--swim_file="+app_swimmers_txt_dir,
-            "--vpositions="+apptainer_workdir+"vpositions.txt"
+            "--vpositions="+apptainer_workdir+"vpositions.txt",
+            "--nostamp"
         };
         string launch_cmd = string{"./launch.sh "} + join(launch_args, " ");
         // cout << "launch: " << launch_cmd << endl;
@@ -432,7 +432,7 @@ struct rescue_problem {
         string exec_cmd = join(exec_pieces, " ");
         string process_node_reports_cmd = "process_node_reports "+\
             apptainer_log_dir+"XLOG_SHORESIDE/XLOG_SHORESIDE.alog "+\
-            apptainer_log_dir+"abe_positions.csv";
+            apptainer_log_dir;
         string filter_node_reports_cmd = "csv_filter_duplicate_rows "+\
             apptainer_log_dir+"abe_positions.csv "+\
             apptainer_log_dir+"abe_positions_filtered.csv";
