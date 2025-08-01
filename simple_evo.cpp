@@ -411,7 +411,9 @@ struct rescue_problem {
             "--vpositions="+apptainer_workdir+"vpositions.txt",
             "--nostamp"
         };
-        string launch_cmd = string{"./launch.sh "} + join(launch_args, " ");
+        string launch_cmd = 
+            string{"cd /home/moos/moos-ivp-learn/missions/alpha_learn && ./launch.sh "} + \
+            join(launch_args, " ");
         // cout << "launch: " << launch_cmd << endl;
 
         // Build apptainer exec command for launching mission
@@ -437,50 +439,68 @@ struct rescue_problem {
             apptainer_log_dir+"abe_positions.csv "+\
             apptainer_log_dir+"abe_positions_filtered.csv";
         vector<string> apptainer_cmds = {
-            "cd /home/moos/moos-ivp-learn/missions/alpha_learn",
             launch_cmd,
             process_node_reports_cmd,
             filter_node_reports_cmd
         };
-        string apptainer_exec_cmd = exec_cmd + "\"" + join(apptainer_cmds, " && ") + "\"";
-        string redirect_cmd = " > "+host_log_dir+"apptainer_out.log 2>&1";
-        string apptainer_exec_w_redirect_cmd = apptainer_exec_cmd + redirect_cmd;
+        string apptainer_logfile = host_log_dir+"apptainer_out.log";
+        // string create_app_log_dir_cmd = string{"> "}+apptainer_log_dir;
+
+        // string apptainer_exec_cmd = exec_cmd + "\"" + join(apptainer_cmds, " && ") + "\"";
+        // string redirect_cmd = " > "+host_log_dir+"apptainer_out.log 2>&1";
+        // string apptainer_exec_w_redirect_cmd = apptainer_exec_cmd + redirect_cmd;
         // cout << "Apptainer command: " << apptainer_exec_w_redirect_cmd << endl;
+
+        // Create the file for logging
+        std::ofstream ofs(apptainer_logfile);
+        if (!ofs) {
+            return {108.0};
+        }
+        for (int i=0; i<apptainer_cmds.size(); i++) {
+            string app_exec_cmd = exec_cmd + \
+            "\"" + apptainer_cmds[i] + "\" >> " + \
+            apptainer_logfile + " 2>&1";
+            cout << "Apptainer command: " << app_exec_cmd << endl;
+            int out = system(app_exec_cmd.c_str());
+            if (out != 0) {
+                return {200.0+i};
+            }
+        }
         
         // Execute with timeout and signal handling
-        pid_t child_pid = fork();
-        if (child_pid == 0) {
-            // Child process: execute the command
-            execl("/bin/sh", "sh", "-c", apptainer_exec_w_redirect_cmd.c_str(), (char*)NULL);
-            exit(1);  // If execl fails
-        } else if (child_pid > 0) {
-            // Parent process: wait for child with periodic checks
-            int status;
-            pid_t result;
+        // pid_t child_pid = fork();
+        // if (child_pid == 0) {
+        //     // Child process: execute the command
+        //     execl("/bin/sh", "sh", "-c", apptainer_exec_w_redirect_cmd.c_str(), (char*)NULL);
+        //     exit(1);  // If execl fails
+        // } else if (child_pid > 0) {
+        //     // Parent process: wait for child with periodic checks
+        //     int status;
+        //     pid_t result;
             
-            // Poll every second to check if we should terminate
-            while ((result = waitpid(child_pid, &status, WNOHANG)) == 0) {
-                if (!running) {
-                    // Send SIGTERM first, then SIGKILL if needed
-                    kill(child_pid, SIGTERM);
-                    sleep(2);  // Give it 2 seconds to terminate gracefully
-                    if (waitpid(child_pid, &status, WNOHANG) == 0) {
-                        kill(child_pid, SIGKILL);
-                        waitpid(child_pid, &status, 0);  // Clean up zombie
-                    }
-                    return {104.0};  // Return early
-                }
-                sleep(1);  // Check every second
-            }
+        //     // Poll every second to check if we should terminate
+        //     while ((result = waitpid(child_pid, &status, WNOHANG)) == 0) {
+        //         if (!running) {
+        //             // Send SIGTERM first, then SIGKILL if needed
+        //             kill(child_pid, SIGTERM);
+        //             sleep(2);  // Give it 2 seconds to terminate gracefully
+        //             if (waitpid(child_pid, &status, WNOHANG) == 0) {
+        //                 kill(child_pid, SIGKILL);
+        //                 waitpid(child_pid, &status, 0);  // Clean up zombie
+        //             }
+        //             return {104.0};  // Return early
+        //         }
+        //         sleep(1);  // Check every second
+        //     }
             
-            if (result == -1) {
-                // Error in waitpid
-                return {105.0};
-            }
-        } else {
-            // Fork failed
-            return {106.0};
-        }
+        //     if (result == -1) {
+        //         // Error in waitpid
+        //         return {105.0};
+        //     }
+        // } else {
+        //     // Fork failed
+        //     return {106.0};
+        // }
 
         // Check again before processing results
         if (!running) {
