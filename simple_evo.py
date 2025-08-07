@@ -5,6 +5,8 @@ from copy import deepcopy
 from typing import List
 import multiprocessing
 import subprocess
+import csv
+import math
 
 from tqdm import tqdm
 from shapely.geometry import Point
@@ -110,6 +112,22 @@ def writeNeuralNetworkCsv(weights, structure, action_bounds, filepath):
         f.write(f"{structure_str}\n")
         f.write(f"{action_bounds_str}\n")
 
+def readXyCsv(filepath):
+    """
+    Reads a CSV file and returns a list of Point objects.
+    Assumes the first line is a header and each subsequent line is 'x,y'.
+    Raises an exception if the file cannot be read.
+    """
+    points = []
+    with open(filepath, newline='') as csvfile:
+        reader = csv.reader(csvfile)
+        next(reader) # Skip header
+        for row in reader:
+            x_val = float(row[0])
+            y_val = float(row[1])
+            points.append(Point(x_val, y_val))
+    return points
+
 def getSourceDir():
     """
     Returns the absolute directory of this python file.
@@ -125,7 +143,7 @@ class EvolutionaryAlgorithm():
         self.num_processes = 10
 
         self.num_trials = 1
-        self.num_generations = 1
+        self.num_generations = 100
         self.gen = 0
         self.trial_id = None
 
@@ -137,7 +155,7 @@ class EvolutionaryAlgorithm():
         self.neural_network_size = getSizeOfNet(self.neural_network_structure)
         self.neural_network_action_bounds = [[0.0, 1.0], [-180.0, 180.0]]
 
-        self.population_size = 1
+        self.population_size = 50
 
         self.num_rollouts_per_indivdiual = 1
         self.rpi = self.num_rollouts_per_indivdiual
@@ -149,8 +167,12 @@ class EvolutionaryAlgorithm():
         self.default_swimmer_pts = [Point(12.0, -60.0)]
         self.default_vehicle_poses = [Pose(13.0, -20.0, 181.0)]
 
-        self.setupMapping()
+        self.moos_timewarp = 10
+
+        self.host_root_folder = \
+            Path("/Users/ever/hpc-share/evo-mariners-results/2025-08-06/anemone")
         self.setupRootFolders()
+        self.setupMapping()
 
     # This makes it possible to pass evaluation to multiprocessing
     # Without this, the pool tries to pickle the entire object, including itself
@@ -171,6 +193,22 @@ class EvolutionaryAlgorithm():
             self.neural_network_action_bounds,
             filepath
         )
+
+    def computeSwimmersRescued(self, vehicle_pts, swimmer_pts):
+        """
+        Counts the number of swimmers rescued by vehicles.
+        """
+        rescue_rng_max = 5.0
+        total_swimmers = 0
+        for swimmer in swimmer_pts:
+            for vehicle in vehicle_pts:
+                dx = vehicle.x - swimmer.x
+                dy = vehicle.y - swimmer.y
+                distance = math.sqrt(dx*dx + dy*dy)
+                if distance < rescue_rng_max:
+                    total_swimmers += 1
+                    break
+        return total_swimmers
 
     def setupMapping(self):
         if self.use_multiprocessing:
@@ -197,12 +235,13 @@ class EvolutionaryAlgorithm():
         return out
 
     def setupRootFolders(self):
-        self.host_home = Path(os.getenv('HOME'))
+        # self.host_home = Path(os.getenv('HOME'))
         self.app_home = Path('/home/moos')
 
-        self.slurm_job_str = 'slurm-' + os.getenv('SLURM_JOB_ID', 'none')
-        self.host_root_folder = self.host_home / 'hpc-share' / 'tmp' / self.slurm_job_str
-        self.app_root_folder = self.app_home / 'hpc-share' / 'tmp' / self.slurm_job_str
+        # self.slurm_job_str = 'slurm-' + os.getenv('SLURM_JOB_ID', 'none')
+        # self.host_root_folder = self.host_home / 'hpc-share' / 'tmp' / self.slurm_job_str
+        # self.app_root_folder = self.app_home / 'hpc-share' / 'tmp' / self.slurm_job_str
+        self.app_root_folder = self.app_home / 'hpc-share'
 
         self.host_root_folder.mkdir(parents=True, exist_ok=True)
 
@@ -240,12 +279,10 @@ class EvolutionaryAlgorithm():
         return offspring
 
     def evaluateIndividual(self, individual_eval_in):
-        trial_folder = 'trial_'+str(self.trial_id)
-        gen_folder = 'gen_'+str(self.gen)
         individual_folder = 'ind_'+str(individual_eval_in.individual.temp_id)
         rollout_folder = 'rollout_'+str(individual_eval_in.rollout_id)
         
-        host_work_folder = self.host_root_folder / trial_folder / gen_folder / individual_folder / rollout_folder
+        host_work_folder = self.host_root_folder / self.trial_folder / self.gen_folder / individual_folder / rollout_folder
         host_log_folder = host_work_folder / 'logs'
         host_log_folder.mkdir(parents=True, exist_ok=True)
 
@@ -253,7 +290,7 @@ class EvolutionaryAlgorithm():
         host_vpositions_txt_file = host_work_folder / 'vpositions.txt'
         host_neural_net_csv_file = host_work_folder / 'neural_network_abe.csv'
 
-        app_work_folder = self.app_root_folder / trial_folder / gen_folder / individual_folder / rollout_folder
+        app_work_folder = self.app_root_folder / self.trial_folder / self.gen_folder / individual_folder / rollout_folder
         app_log_folder = app_work_folder / 'logs'
         apptainer_sif_file = getSourceDir() / "apptainer" / "ubuntu_20.04_ivp_2680_learn.sif";
 
@@ -267,7 +304,7 @@ class EvolutionaryAlgorithm():
 
         # Build launch arguments
         launch_args = [
-            "10",  # timewarp
+            str(self.moos_timewarp),  # timewarp
             "--xlaunched",
             f"--logdir={app_log_folder}/",
             f"--neural_network_dir={app_neural_net_csv_file}",
@@ -293,7 +330,7 @@ class EvolutionaryAlgorithm():
             "--net",
             "--network=none",
             "--fakeroot",
-            f"--bind {self.host_home}/hpc-share:/home/moos/hpc-share",
+            f"--bind {self.host_root_folder}:{self.app_root_folder}",
             "--writable-tmpfs",
             str(apptainer_sif_file),
             "/bin/bash -c "
@@ -301,10 +338,10 @@ class EvolutionaryAlgorithm():
         exec_cmd = " ".join(exec_pieces)
 
         process_node_reports_cmd = (
-            f"process_node_reports {app_log_folder}XLOG_SHORESIDE/XLOG_SHORESIDE.alog {app_log_folder}"
+            f"process_node_reports {app_log_folder}/XLOG_SHORESIDE/XLOG_SHORESIDE.alog {app_log_folder}/"
         )
         filter_node_reports_cmd = (
-            f"csv_filter_duplicate_rows {app_log_folder}abe_positions.csv {app_log_folder}abe_positions_filtered.csv"
+            f"csv_filter_duplicate_rows {app_log_folder}/abe_positions.csv {app_log_folder}/abe_positions_filtered.csv"
         )
         apptainer_cmds = [
             launch_cmd,
@@ -312,21 +349,28 @@ class EvolutionaryAlgorithm():
             filter_node_reports_cmd
         ]
 
-        apptainer_logfile = Path(host_log_folder) / "apptainer_out.log"
+        app_log_file = Path(host_log_folder) / "apptainer_out.log"
 
         # Create the file for logging (truncate if exists, create if not)
-        apptainer_logfile.write_text('')
+        app_log_file.write_text('')
 
+        # Run apptainer commands
         for i, cmd in enumerate(apptainer_cmds):
             app_exec_cmd = (
-                f"{exec_cmd}\"{cmd}\" >> {apptainer_logfile} 2>&1"
+                f"{exec_cmd}\"{cmd}\" >> {app_log_file} 2>&1"
             )
-            print(f"Apptainer command: {app_exec_cmd}")
+            # print(f"Apptainer command: {app_exec_cmd}")
             out = subprocess.call(app_exec_cmd, shell=True)
             if out != 0:
                 raise RuntimeError(f"Apptainer command failed with exit code {out} (step {i})")
 
-        return IndividualEvalOut(0)
+        vpositions_csv_file = host_log_folder / "abe_positions_filtered.csv"
+        vehicle_pts = readXyCsv(vpositions_csv_file)
+
+        swimmers_rescued = self.computeSwimmersRescued(vehicle_pts, self.default_swimmer_pts)
+        score = swimmers_rescued / len(self.default_swimmer_pts)
+        
+        return IndividualEvalOut(score)
 
     def evaluateIndividuals(self, individual_eval_ins):
         if self.use_multiprocessing:
@@ -337,6 +381,13 @@ class EvolutionaryAlgorithm():
         return individual_eval_outs
 
     def evaluatePopulation(self, population):
+        # Set up directories for evaluating the population at this generation
+        self.trial_folder = 'trial_'+str(self.trial_id)
+        self.gen_folder = 'gen_'+str(self.gen)
+
+        self.host_gen_folder = self.host_root_folder / self.trial_folder / self.gen_folder
+        self.host_gen_folder.mkdir(parents=True, exist_ok=True)
+
         # Set up the info we need for rollouts
         individual_eval_ins = []
         rollout_seeds = [self.getSeed() for _ in range(self.rpi)]
