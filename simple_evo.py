@@ -327,12 +327,8 @@ class EvolutionaryAlgorithm():
         # Build apptainer exec command
         exec_pieces = [
             "apptainer exec",
-            "--cleanenv",
-            "--containall",
-            "--contain",
             "--net",
             "--network=none",
-            "--fakeroot",
             f"--bind {self.host_root_folder}:{self.app_root_folder}",
             "--writable-tmpfs",
             str(apptainer_sif_file),
