@@ -9,6 +9,7 @@ import csv
 import math
 
 from tqdm import tqdm
+import pandas as pd
 from shapely.geometry import Point
 
 class Pose():
@@ -163,6 +164,9 @@ class EvolutionaryAlgorithm():
         self.n_elites = 5
         self.tournament_size = 2
 
+        self.mut_indp = 0.2
+        self.mut_std = 0.5
+
         # self.swimmer_generation = "fixed"
         self.default_swimmer_pts = [Point(12.0, -60.0)]
         self.default_vehicle_poses = [Pose(13.0, -20.0, 181.0)]
@@ -171,7 +175,11 @@ class EvolutionaryAlgorithm():
 
         self.host_root_folder = \
             Path("/Users/ever/hpc-share/evo-mariners-results/2025-08-06/anemone")
-        self.setupRootFolders()
+        self.host_root_folder.mkdir(parents=True, exist_ok=True)
+        self.app_home = Path('/home/moos')
+        self.app_root_folder = self.app_home / 'hpc-share'
+        self.fitness_csv_file = None
+
         self.setupMapping()
 
     # This makes it possible to pass evaluation to multiprocessing
@@ -234,17 +242,6 @@ class EvolutionaryAlgorithm():
         self.random_seed_val+= 1
         return out
 
-    def setupRootFolders(self):
-        # self.host_home = Path(os.getenv('HOME'))
-        self.app_home = Path('/home/moos')
-
-        # self.slurm_job_str = 'slurm-' + os.getenv('SLURM_JOB_ID', 'none')
-        # self.host_root_folder = self.host_home / 'hpc-share' / 'tmp' / self.slurm_job_str
-        # self.app_root_folder = self.app_home / 'hpc-share' / 'tmp' / self.slurm_job_str
-        self.app_root_folder = self.app_home / 'hpc-share'
-
-        self.host_root_folder.mkdir(parents=True, exist_ok=True)
-
     def wrapIndividuals(self, population, eval_summaries):
         for individual, eval_summary in zip(population, eval_summaries):
             individual.rollout_fitnesses = [eval_out.fitness for eval_out in eval_summary.eval_outs]
@@ -262,6 +259,11 @@ class EvolutionaryAlgorithm():
             )
         return individual_summaries
 
+    def mutateIndividual(self, individual):
+        for i in range(len(individual.weights)):
+            if random.random() < self.mut_indpb:
+                individual.weights[i] += random.guass(0, self.mut_std)
+
     def selectAndMutate(self, population, individual_summaries):
         # Organize individuals by fitness
         population.sort(key=lambda individual: individual.fitness, reverse=True)
@@ -273,8 +275,9 @@ class EvolutionaryAlgorithm():
         # Mutate the winner of the tournament
         while len(offspring) < self.population_size:
             competitors = random.sample(population, self.tournament_size)
-            winner = max(competitors, key=lambda individual: individual.fitness)
-            offspring.append(deepcopy(winner))
+            winner = deepcopy(max(competitors, key=lambda individual: individual.fitness))
+            self.mutateIndividual(winner)
+            offspring.append(winner)
         
         return offspring
 
@@ -362,7 +365,8 @@ class EvolutionaryAlgorithm():
             # print(f"Apptainer command: {app_exec_cmd}")
             out = subprocess.call(app_exec_cmd, shell=True)
             if out != 0:
-                raise RuntimeError(f"Apptainer command failed with exit code {out} (step {i})")
+                print(f"Apptainer command failed with exit code {out} (step {i})")
+                return IndvidualEvalOut(-float(100+i))
 
         vpositions_csv_file = host_log_folder / "abe_positions_filtered.csv"
         vehicle_pts = readXyCsv(vpositions_csv_file)
@@ -371,6 +375,38 @@ class EvolutionaryAlgorithm():
         score = swimmers_rescued / len(self.default_swimmer_pts)
         
         return IndividualEvalOut(score)
+
+    def setupTrialFitnessCsv(self):
+        # Setup folder
+        folder = self.host_root_folder / 'trial_'+str(self.trial_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        # Define filepath
+        self.fitness_csv_file = folder / 'fitness.csv'
+
+        # Define header columns
+        columns = ['generation']
+        for i in range(self.population_size):
+            columns.append('individual_'+str(i))
+            for j in range(self.num_rollouts_per_indivdiual):
+                columns.append('individual_'+str(i)+'_rollout_'+str(j))
+        # Create empty dataframe
+        df = pd.DataFrame(columns=columns)
+        # Write only the header to the CSV
+        df.to_csv(self.fitness_csv_file)
+    
+    def updateTrialFitnessCsv(self, population):
+        # Build out a dictionary of fitnesses
+        fit_dict = {
+            'gen' : self.gen
+        }
+        for individual in population:
+            # Write the individual's fitness
+            ind = 'individual_'+str(individual.temp_id)
+            file_dict[ind] = individual.fitness
+            # Write fitness from each rollout
+            for r, rfit in enumerate(individual.rollout_fitnesses):
+                ind_roll = ind+'_rollout_'+str(r)
+                file_dict[ind_roll] = rfit
 
     def evaluateIndividuals(self, individual_eval_ins):
         if self.use_multiprocessing:
@@ -381,6 +417,10 @@ class EvolutionaryAlgorithm():
         return individual_eval_outs
 
     def evaluatePopulation(self, population):
+        # Give each individual a temporary id for evaluation
+        for i in range(len(self.population)):
+            self.population[i].temp_id = i
+
         # Set up directories for evaluating the population at this generation
         self.trial_folder = 'trial_'+str(self.trial_id)
         self.gen_folder = 'gen_'+str(self.gen)
@@ -413,6 +453,9 @@ class EvolutionaryAlgorithm():
             if self.increment_seed_every_trial:
                 self.random_seed_val += self.trial_id
             random.seed(self.getSeed())
+        
+        # We need a top level fitness file fitness.csv for the trial
+        self.setupTrialFitnessCsv()
 
         # Initialize the population
         population = self.population()
@@ -422,6 +465,9 @@ class EvolutionaryAlgorithm():
 
         # Wrap summary information back into each individual
         self.wrapIndividuals(population, individual_summaries)
+
+        # Update fitness.csv
+        self.updateTrialFitnessCsv(population)
 
         # Iterate generations
         for _ in tqdm(range(self.num_generations)):
