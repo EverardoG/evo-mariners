@@ -7,6 +7,7 @@ import multiprocessing
 import subprocess
 import csv
 import math
+import argparse
 
 from tqdm import tqdm
 import pandas as pd
@@ -139,9 +140,9 @@ def getSourceDir():
     return Path(__file__).parent.resolve()
 
 class EvolutionaryAlgorithm():
-    def __init__(self):
+    def __init__(self, config_dir: str):
         self.use_multiprocessing = False
-        self.num_processes = 10
+        self.num_processes = 5
 
         self.num_trials = 1
         self.num_generations = 100
@@ -156,15 +157,15 @@ class EvolutionaryAlgorithm():
         self.neural_network_size = getSizeOfNet(self.neural_network_structure)
         self.neural_network_action_bounds = [[0.0, 1.0], [-180.0, 180.0]]
 
-        self.population_size = 50
+        self.population_size = 2
 
         self.num_rollouts_per_indivdiual = 1
         self.rpi = self.num_rollouts_per_indivdiual
 
-        self.n_elites = 5
+        self.n_elites = 1
         self.tournament_size = 2
 
-        self.mut_indp = 0.2
+        self.mut_indpb = 0.2
         self.mut_std = 0.5
 
         # self.swimmer_generation = "fixed"
@@ -174,7 +175,7 @@ class EvolutionaryAlgorithm():
         self.moos_timewarp = 10
 
         self.host_root_folder = \
-            Path("/Users/ever/hpc-share/evo-mariners-results/2025-08-06/anemone")
+            Path(config_dir)
         self.host_root_folder.mkdir(parents=True, exist_ok=True)
         self.app_home = Path('/home/moos')
         self.app_root_folder = self.app_home / 'hpc-share'
@@ -262,7 +263,7 @@ class EvolutionaryAlgorithm():
     def mutateIndividual(self, individual):
         for i in range(len(individual.weights)):
             if random.random() < self.mut_indpb:
-                individual.weights[i] += random.guass(0, self.mut_std)
+                individual.weights[i] += random.gauss(0, self.mut_std)
 
     def selectAndMutate(self, population, individual_summaries):
         # Organize individuals by fitness
@@ -327,8 +328,12 @@ class EvolutionaryAlgorithm():
         # Build apptainer exec command
         exec_pieces = [
             "apptainer exec",
+            "--cleanenv",
+            "--containall",
+            "--contain",
             "--net",
             "--network=none",
+            "--fakeroot",
             f"--bind {self.host_root_folder}:{self.app_root_folder}",
             "--writable-tmpfs",
             str(apptainer_sif_file),
@@ -358,11 +363,11 @@ class EvolutionaryAlgorithm():
             app_exec_cmd = (
                 f"{exec_cmd}\"{cmd}\" >> {app_log_file} 2>&1"
             )
-            # print(f"Apptainer command: {app_exec_cmd}")
+            print(f"Apptainer command: {app_exec_cmd}")
             out = subprocess.call(app_exec_cmd, shell=True)
             if out != 0:
                 print(f"Apptainer command failed with exit code {out} (step {i})")
-                return IndvidualEvalOut(-float(100+i))
+                return IndividualEvalOut(-float(100+i))
 
         vpositions_csv_file = host_log_folder / "abe_positions_filtered.csv"
         vehicle_pts = readXyCsv(vpositions_csv_file)
@@ -374,7 +379,7 @@ class EvolutionaryAlgorithm():
 
     def setupTrialFitnessCsv(self):
         # Setup folder
-        folder = self.host_root_folder / 'trial_'+str(self.trial_id)
+        folder = self.host_root_folder / ('trial_'+str(self.trial_id))
         folder.mkdir(parents=True, exist_ok=True)
         # Define filepath
         self.fitness_csv_file = folder / 'fitness.csv'
@@ -388,7 +393,7 @@ class EvolutionaryAlgorithm():
         # Create empty dataframe
         df = pd.DataFrame(columns=columns)
         # Write only the header to the CSV
-        df.to_csv(self.fitness_csv_file)
+        df.to_csv(self.fitness_csv_file, index=False)
     
     def updateTrialFitnessCsv(self, population):
         # Build out a dictionary of fitnesses
@@ -398,11 +403,17 @@ class EvolutionaryAlgorithm():
         for individual in population:
             # Write the individual's fitness
             ind = 'individual_'+str(individual.temp_id)
-            file_dict[ind] = individual.fitness
+            fit_dict[ind] = individual.fitness
             # Write fitness from each rollout
             for r, rfit in enumerate(individual.rollout_fitnesses):
                 ind_roll = ind+'_rollout_'+str(r)
-                file_dict[ind_roll] = rfit
+                fit_dict[ind_roll] = rfit
+        
+        # Convert fit_dict to DataFrame
+        df = pd.DataFrame([fit_dict])
+
+        # Append the row to the CSV file
+        df.to_csv(self.fitness_csv_file, mode='a', header=False, index=False)
 
     def evaluateIndividuals(self, individual_eval_ins):
         if self.use_multiprocessing:
@@ -414,8 +425,8 @@ class EvolutionaryAlgorithm():
 
     def evaluatePopulation(self, population):
         # Give each individual a temporary id for evaluation
-        for i in range(len(self.population)):
-            self.population[i].temp_id = i
+        for i in range(len(population)):
+            population[i].temp_id = i
 
         # Set up directories for evaluating the population at this generation
         self.trial_folder = 'trial_'+str(self.trial_id)
@@ -499,5 +510,9 @@ class EvolutionaryAlgorithm():
             self.pool.close()
 
 if __name__ == '__main__':
-    ea = EvolutionaryAlgorithm()
+    parser = argparse.ArgumentParser(description="Run evolutionary algorithm.")
+    parser.add_argument('config_dir', type=str, help='Path to config directory')
+    args = parser.parse_args()
+
+    ea = EvolutionaryAlgorithm(args.config_dir)
     ea.run()
