@@ -1,0 +1,142 @@
+Bootstrap: docker
+From: ubuntu:20.04
+
+%labels
+    maintainer="Everardo Gonzalez <gonzaeve@oregonstate.edu>"
+    base_maintainer="Tyler Paine <tpaine@mit.edu>"
+    description="MOOS-IvP learning environment with 2680 course tools"
+    version="1.0"
+
+%environment
+    # Set the default shell to bash
+    export SHELL="/bin/bash"
+    
+    # Add MOOS variables to the env (base layer)
+    export PATH="/home/moos/moos-ivp/bin:${PATH}"
+    export IVP_BEHAVIOR_DIRS="/home/moos/moos-ivp/lib"
+    
+    # Add 2680 course variables (2680 layer)
+    export PATH="/home/moos/moos-ivp-2680/bin:${PATH}"
+    export IVP_BEHAVIOR_DIRS="/home/moos/moos-ivp-2680/lib:${IVP_BEHAVIOR_DIRS}"
+    
+    # Add learn variables (learn layer)
+    export PATH="/home/moos/moos-ivp-learn/bin:${PATH}"
+    export IVP_BEHAVIOR_DIRS="/home/moos/moos-ivp-learn/lib:${IVP_BEHAVIOR_DIRS}"
+
+%post
+    # Update package lists
+    apt-get update -y
+    
+    # Install required MOOS dependencies (base layer)
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        cmake \
+        build-essential \
+        git \
+        emacs \
+        psmisc \
+        sudo
+    
+    # Clean up apt cache
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+    
+    # Make a user to run the MOOS apps
+    useradd -m -p "moos" moos
+    usermod -aG sudo moos
+    
+    # Switch to moos user context for building
+    cd /home/moos
+    
+    # Clone and build base MOOS-IvP (base layer)
+    echo "Building base MOOS-IvP..."
+    sudo -u moos git clone https://github.com/moos-ivp/moos-ivp.git
+    cd /home/moos/moos-ivp
+    sudo -u moos ./build-moos.sh --minrobot --release
+    sudo -u moos ./build-ivp.sh --nogui
+    
+    # Clone and build 2680 course software (2680 layer)
+    echo "Building MOOS-IvP 2680 course software..."
+    cd /home/moos
+    sudo -u moos git clone https://github.com/mit2680/moos-ivp-2680.git
+    cd /home/moos/moos-ivp-2680
+    sudo -u moos ./build.sh --minrobot --release
+    
+    # Clone and build moos-ivp-learn (learn layer)
+    echo "Building MOOS-IvP learn software..."
+    cd /home/moos
+    sudo -u moos git clone https://github.com/EverardoG/moos-ivp-learn.git
+    cd /home/moos/moos-ivp-learn
+    sudo -u moos ./build.sh --release
+    
+    # Set proper ownership
+    chown -R moos:moos /home/moos
+
+%runscript
+    echo "MOOS-IvP Learning Environment with 2680 Course Tools"
+    echo "Available tools:"
+    echo "  - Base MOOS-IvP tools in /home/moos/moos-ivp/bin"
+    echo "  - MIT 2680 course tools in /home/moos/moos-ivp-2680/bin"
+    echo "  - Learning tools in /home/moos/moos-ivp-learn/bin"
+    echo ""
+    echo "Environment variables set:"
+    echo "  PATH: $PATH"
+    echo "  IVP_BEHAVIOR_DIRS: $IVP_BEHAVIOR_DIRS"
+    echo ""
+    exec /bin/bash "$@"
+
+%startscript
+    # This runs when the container starts as an instance
+    echo "Starting MOOS-IvP learning environment..."
+
+%help
+    This is a comprehensive MOOS-IvP learning environment that includes:
+    
+    1. Base MOOS-IvP framework
+    2. MIT 2680 course-specific tools and extensions
+    3. Personal learning repository (moos-ivp-learn)
+    
+    The container is based on Ubuntu 20.04 and includes all necessary
+    dependencies for marine robotics development with MOOS-IvP.
+    
+    To build this container:
+        apptainer build --fakeroot ubuntu_20.04_ivp_2680_learn.sif ubuntu_20.04_ivp_2680_learn.def
+    
+    To run interactively:
+        apptainer shell --fakeroot ubuntu_20.04_ivp_2680_learn.sif
+    
+    To execute commands:
+        apptainer exec ubuntu_20.04_ivp_2680_learn.sif <command>
+
+%test
+    # Test that MOOS tools are available
+    echo "Testing MOOS-IvP installation..."
+    
+    # Test base MOOS tools
+    if [ -f /home/moos/moos-ivp/bin/MOOSDB ]; then
+        echo "✓ Base MOOS-IvP tools found"
+    else
+        echo "✗ Base MOOS-IvP tools not found"
+        exit 1
+    fi
+    
+    # Test 2680 tools
+    if [ -d /home/moos/moos-ivp-2680/bin ]; then
+        echo "✓ MOOS-IvP 2680 tools found"
+    else
+        echo "✗ MOOS-IvP 2680 tools not found"
+        exit 1
+    fi
+    
+    # Test learn tools
+    if [ -d /home/moos/moos-ivp-learn/bin ]; then
+        echo "✓ MOOS-IvP learn tools found"
+    else
+        echo "✗ MOOS-IvP learn tools not found"
+        exit 1
+    fi
+    
+    # Test environment variables
+    echo "PATH: $PATH"
+    echo "IVP_BEHAVIOR_DIRS: $IVP_BEHAVIOR_DIRS"
+    
+    echo "All tests passed!"
