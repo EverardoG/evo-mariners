@@ -341,7 +341,7 @@ class EvolutionaryAlgorithm():
             f"--logdir={app_log_folder}/",
             f"--neural_network_dir={app_work_folder}/",
             "--uMayFinish",
-            f"--max_db_uptime={self.max_db_uptime}"
+            f"--max_db_uptime={self.max_db_uptime}",
             "--nogui",
             "--rescuebehavior=NeuralNetwork",
             # "--rescuebehavior=FollowCOM",
