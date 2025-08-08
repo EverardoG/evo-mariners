@@ -145,7 +145,7 @@ class EvolutionaryAlgorithm():
         self.load_checkpoint = True
         self.delete_previous_checkpoint = False
 
-        self.use_multiprocessing = False
+        self.use_multiprocessing = True
         self.num_processes = 5
 
         self.num_trials = 1
@@ -161,13 +161,13 @@ class EvolutionaryAlgorithm():
         self.neural_network_size = getSizeOfNet(self.neural_network_structure)
         self.neural_network_action_bounds = [[0.0, 1.0], [-180.0, 180.0]]
 
-        self.population_size = 5
+        self.population_size = 50
 
         self.num_rollouts_per_indivdiual = 1
         self.rpi = self.num_rollouts_per_indivdiual
 
-        self.n_elites = 1
-        self.tournament_size = 2
+        self.n_elites = 5
+        self.tournament_size = 3
 
         self.mut_indpb = 0.2
         self.mut_std = 1.0
@@ -176,7 +176,7 @@ class EvolutionaryAlgorithm():
         self.default_swimmer_pts = [Point(12.0, -60.0)]
         self.default_vehicle_poses = [Pose(13.0, -20.0, 181.0)]
 
-        self.moos_timewarp = 1
+        self.moos_timewarp = 10
         self.max_db_uptime = 120
         self.timeout = 500
 
