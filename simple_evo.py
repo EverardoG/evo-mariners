@@ -55,11 +55,11 @@ def getRandomWeights(num_weights: int) -> List[float]:
 def writeSwimmersTxt(swimmer_pts, filepath):
     """
     Write swimmers data to a text file.
-    
+
     Args:
         swimmer_pts: List of shapely Point objects representing swimmer positions
         filepath: pathlib.Path object for the output file
-    
+
     Raises:
         IOError: If the file cannot be opened or written to
         Exception: For any other errors during file operations
@@ -67,7 +67,7 @@ def writeSwimmersTxt(swimmer_pts, filepath):
     with open(filepath, 'w') as f:
         # Write the top line
         f.write("poly = pts={60,10:-75.5402,-54.2561:-36.9866,-135.58:98.5536,-71.3241}\n")
-        
+
         # Write swimmer data
         for i, swimmer_pt in enumerate(swimmer_pts):
             # Format: swimmer = name=p01, x=13, y=10
@@ -76,11 +76,11 @@ def writeSwimmersTxt(swimmer_pts, filepath):
 def writeVpositionsTxt(vehicle_poses, filepath):
     """
     Write vehicle positions data to a text file.
-    
+
     Args:
         vehicle_poses: List of Pose objects with x, y, and heading attributes
         filepath: pathlib.Path object for the output file
-    
+
     Raises:
         IOError: If the file cannot be opened or written to
         Exception: For any other errors during file operations
@@ -92,13 +92,13 @@ def writeVpositionsTxt(vehicle_poses, filepath):
 def writeNeuralNetworkCsv(weights, structure, action_bounds, filepath):
     """
     Write neural network parameters to a CSV file.
-    
+
     Args:
         weights: List of weight values (floats)
         structure: List of integers representing the network structure
         action_bounds: List of two lists - [lower_bounds, upper_bounds]
         filepath: pathlib.Path object for the output file
-    
+
     Raises:
         IOError: If the file cannot be opened or written to
         Exception: For any other errors during file operations
@@ -108,7 +108,7 @@ def writeNeuralNetworkCsv(weights, structure, action_bounds, filepath):
     structure_str = ','.join(str(s) for s in structure)
     action_bounds_str = ','.join(f"{b:.3f}" for b in action_bounds[0]) + ',' + \
                        ','.join(f"{b:.3f}" for b in action_bounds[1])
-    
+
     with open(filepath, 'w') as f:
         f.write(f"{weights_str}\n")
         f.write(f"{structure_str}\n")
@@ -133,7 +133,7 @@ def readXyCsv(filepath):
 def getSourceDir():
     """
     Returns the absolute directory of this python file.
-    
+
     Returns:
         pathlib.Path: The directory containing the current Python script
     """
@@ -142,7 +142,7 @@ def getSourceDir():
 class EvolutionaryAlgorithm():
     def __init__(self, config_dir: str):
         self.use_multiprocessing = False
-        self.num_processes = 5
+        self.num_processes = 10
 
         self.num_trials = 1
         self.num_generations = 100
@@ -157,12 +157,12 @@ class EvolutionaryAlgorithm():
         self.neural_network_size = getSizeOfNet(self.neural_network_structure)
         self.neural_network_action_bounds = [[0.0, 1.0], [-180.0, 180.0]]
 
-        self.population_size = 2
+        self.population_size = 50
 
         self.num_rollouts_per_indivdiual = 1
         self.rpi = self.num_rollouts_per_indivdiual
 
-        self.n_elites = 1
+        self.n_elites = 5
         self.tournament_size = 2
 
         self.mut_indpb = 0.2
@@ -194,7 +194,7 @@ class EvolutionaryAlgorithm():
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-    
+
     def writeNeuralNetworkCsv(self, individual, filepath):
         return writeNeuralNetworkCsv(
             individual.weights,
@@ -279,13 +279,13 @@ class EvolutionaryAlgorithm():
             winner = deepcopy(max(competitors, key=lambda individual: individual.fitness))
             self.mutateIndividual(winner)
             offspring.append(winner)
-        
+
         return offspring
 
     def evaluateIndividual(self, individual_eval_in):
         individual_folder = 'ind_'+str(individual_eval_in.individual.temp_id)
         rollout_folder = 'rollout_'+str(individual_eval_in.rollout_id)
-        
+
         host_work_folder = self.host_root_folder / self.trial_folder / self.gen_folder / individual_folder / rollout_folder
         host_log_folder = host_work_folder / 'logs'
         host_log_folder.mkdir(parents=True, exist_ok=True)
@@ -374,7 +374,7 @@ class EvolutionaryAlgorithm():
 
         swimmers_rescued = self.computeSwimmersRescued(vehicle_pts, self.default_swimmer_pts)
         score = swimmers_rescued / len(self.default_swimmer_pts)
-        
+
         return IndividualEvalOut(score)
 
     def setupTrialFitnessCsv(self):
@@ -394,7 +394,7 @@ class EvolutionaryAlgorithm():
         df = pd.DataFrame(columns=columns)
         # Write only the header to the CSV
         df.to_csv(self.fitness_csv_file, index=False)
-    
+
     def updateTrialFitnessCsv(self, population):
         # Build out a dictionary of fitnesses
         fit_dict = {
@@ -408,7 +408,7 @@ class EvolutionaryAlgorithm():
             for r, rfit in enumerate(individual.rollout_fitnesses):
                 ind_roll = ind+'_rollout_'+str(r)
                 fit_dict[ind_roll] = rfit
-        
+
         # Convert fit_dict to DataFrame
         df = pd.DataFrame([fit_dict])
 
@@ -446,7 +446,7 @@ class EvolutionaryAlgorithm():
 
         # Let's evaluate individuals in our rollouts
         individual_eval_outs = self.evaluateIndividuals(individual_eval_ins)
-        
+
         # Now wrap everything up nicely into summaries
         individual_summaries = self.buildIndividualSummaries(individual_eval_ins, individual_eval_outs)
 
@@ -460,7 +460,7 @@ class EvolutionaryAlgorithm():
             if self.increment_seed_every_trial:
                 self.random_seed_val += self.trial_id
             random.seed(self.getSeed())
-        
+
         # We need a top level fitness file fitness.csv for the trial
         self.setupTrialFitnessCsv()
 
@@ -501,11 +501,14 @@ class EvolutionaryAlgorithm():
             # Wrap summary information back in
             self.wrapIndividuals(population, individual_summaries)
 
+            # Update fitness.csv
+            self.updateTrialFitnessCsv(population)
+
     def run(self):
         for trial_id in range(self.num_trials):
             self.trial_id = trial_id
             self.runTrial()
-        
+
         if self.use_multiprocessing:
             self.pool.close()
 
