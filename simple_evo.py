@@ -8,6 +8,7 @@ import subprocess
 import csv
 import math
 import argparse
+import pickle
 
 from tqdm import tqdm
 import pandas as pd
@@ -141,8 +142,11 @@ def getSourceDir():
 
 class EvolutionaryAlgorithm():
     def __init__(self, config_dir: str):
-        self.use_multiprocessing = False
-        self.num_processes = 10
+        self.load_checkpoint = True
+        self.delete_previous_checkpoint = False
+
+        self.use_multiprocessing = True
+        self.num_processes = 5
 
         self.num_trials = 1
         self.num_generations = 100
@@ -163,7 +167,7 @@ class EvolutionaryAlgorithm():
         self.rpi = self.num_rollouts_per_indivdiual
 
         self.n_elites = 5
-        self.tournament_size = 3
+        self.tournament_size = 2
 
         self.mut_indpb = 0.2
         self.mut_std = 1.0
@@ -172,11 +176,14 @@ class EvolutionaryAlgorithm():
         self.default_swimmer_pts = [Point(12.0, -60.0)]
         self.default_vehicle_poses = [Pose(13.0, -20.0, 181.0)]
 
-        self.moos_timewarp = 10
+        self.moos_timewarp = 1
+        self.max_db_uptime = 120
+        self.timeout = 500
 
         self.host_root_folder = \
             Path(config_dir)
         self.host_root_folder.mkdir(parents=True, exist_ok=True)
+        self.trial_folder = None
         self.app_home = Path('/home/moos')
         self.app_root_folder = self.app_home / 'hpc-share'
         self.fitness_csv_file = None
@@ -194,6 +201,27 @@ class EvolutionaryAlgorithm():
 
     def __setstate__(self, state):
         self.__dict__.update(state)
+
+    def saveCheckpoint(self, population, individual_summaries):
+        checkpoint_dir = self.trial_folder/('checkpoint_'+str(self.gen)+'.pkl')
+        with open(checkpoint_dir, 'wb') as f:
+            pickle.dump((population, individual_summaries), f)
+        if self.delete_previous_checkpoint:
+            checkpoint_dirs = [dir for dir in os.listdir(self.trial_folder) if "checkpoint_" in dir]
+            if len(checkpoint_dirs) > 1:
+                lower_gen = min( [int(dir.split("_")[-1].split('.')[0]) for dir in checkpoint_dirs] )
+                prev_checkpoint_dir = self.trial_folder/('checkpoint_'+str(lower_gen)+'.pkl')
+                os.remove(prev_checkpoint_dir)
+
+    def getCheckpointDirs(self):
+        return [self.trial_folder/dir for dir in os.listdir(self.trial_folder) if "checkpoint_" in dir]
+
+    def loadCheckpoint(self, checkpoint_dirs):
+        checkpoint_dirs.sort(key=lambda x: int(str(x).split('_')[-1].split('.')[0]))
+        with open(checkpoint_dirs[-1], 'rb') as f:
+            population, individual_summaries = pickle.load(f)
+        gen = int(str(checkpoint_dirs[-1]).split('_')[-1].split('.')[0])
+        return population, individual_summaries, gen
 
     def writeNeuralNetworkCsv(self, individual, filepath):
         return writeNeuralNetworkCsv(
@@ -286,7 +314,7 @@ class EvolutionaryAlgorithm():
         individual_folder = 'ind_'+str(individual_eval_in.individual.temp_id)
         rollout_folder = 'rollout_'+str(individual_eval_in.rollout_id)
 
-        host_work_folder = self.host_root_folder / self.trial_folder / self.gen_folder / individual_folder / rollout_folder
+        host_work_folder = self.host_root_folder / self.trial_name / self.gen_folder / individual_folder / rollout_folder
         host_log_folder = host_work_folder / 'logs'
         host_log_folder.mkdir(parents=True, exist_ok=True)
 
@@ -294,7 +322,7 @@ class EvolutionaryAlgorithm():
         host_vpositions_txt_file = host_work_folder / 'vpositions.txt'
         host_neural_net_csv_file = host_work_folder / 'neural_network_abe.csv'
 
-        app_work_folder = self.app_root_folder / self.trial_folder / self.gen_folder / individual_folder / rollout_folder
+        app_work_folder = self.app_root_folder / self.trial_name / self.gen_folder / individual_folder / rollout_folder
         app_log_folder = app_work_folder / 'logs'
         apptainer_sif_file = getSourceDir() / "apptainer" / "ubuntu_20.04_ivp_2680_learn.sif";
 
@@ -315,6 +343,7 @@ class EvolutionaryAlgorithm():
             "--uMayFinish",
             "--nogui",
             "--rescuebehavior=NeuralNetwork",
+            # "--rescuebehavior=FollowCOM",
             "--autodeploy",
             f"--swim_file={app_swimmers_txt_file}",
             f"--vpositions={app_work_folder}/vpositions.txt",
@@ -333,7 +362,7 @@ class EvolutionaryAlgorithm():
             "--contain",
             "--net",
             "--network=none",
-            "--fakeroot",
+            # "--fakeroot",
             f"--bind {self.host_root_folder}:{self.app_root_folder}",
             "--writable-tmpfs",
             str(apptainer_sif_file),
@@ -365,7 +394,7 @@ class EvolutionaryAlgorithm():
             )
             # print(f"Apptainer command: {app_exec_cmd}")
             try:
-                out = subprocess.call(app_exec_cmd, shell=True, timeout=600)
+                out = subprocess.call(app_exec_cmd, shell=True, timeout=self.timeout)
             except subprocess.TimeoutExpired:
                 out = -100
             if out != 0:
@@ -381,11 +410,8 @@ class EvolutionaryAlgorithm():
         return IndividualEvalOut(score)
 
     def setupTrialFitnessCsv(self):
-        # Setup folder
-        folder = self.host_root_folder / ('trial_'+str(self.trial_id))
-        folder.mkdir(parents=True, exist_ok=True)
         # Define filepath
-        self.fitness_csv_file = folder / 'fitness.csv'
+        self.fitness_csv_file = self.trial_folder / 'fitness.csv'
 
         # Define header columns
         columns = ['generation']
@@ -432,10 +458,10 @@ class EvolutionaryAlgorithm():
             population[i].temp_id = i
 
         # Set up directories for evaluating the population at this generation
-        self.trial_folder = 'trial_'+str(self.trial_id)
+        self.trial_name = 'trial_'+str(self.trial_id)
         self.gen_folder = 'gen_'+str(self.gen)
 
-        self.host_gen_folder = self.host_root_folder / self.trial_folder / self.gen_folder
+        self.host_gen_folder = self.host_root_folder / self.trial_name / self.gen_folder
         self.host_gen_folder.mkdir(parents=True, exist_ok=True)
 
         # Set up the info we need for rollouts
@@ -456,31 +482,42 @@ class EvolutionaryAlgorithm():
         return individual_summaries
 
     def runTrial(self):
-        # Check if we are starting with a random seed
-        # Handle seed logic
-        if self.config_seed is not None:
-            self.resetSeed()
-            if self.increment_seed_every_trial:
-                self.random_seed_val += self.trial_id
-            random.seed(self.getSeed())
+        # Setup folder
+        self.trial_folder = self.host_root_folder / ('trial_'+str(self.trial_id))
+        self.trial_folder.mkdir(parents=True, exist_ok=True)
 
-        # We need a top level fitness file fitness.csv for the trial
-        self.setupTrialFitnessCsv()
+        # Check if we are loading a checkpoint or initializing from scratch
+        if self.load_checkpoint and len(checkpoint_dirs := self.getCheckpointDirs()) > 0:
+            population, individual_summaries, self.gen = self.loadCheckpoint(checkpoint_dirs)
+        else:
+            # Check if we are starting with a random seed
+            # Handle seed logic
+            if self.config_seed is not None:
+                self.resetSeed()
+                if self.increment_seed_every_trial:
+                    self.random_seed_val += self.trial_id
+                random.seed(self.getSeed())
 
-        # Initialize the population
-        population = self.population()
+            # We need a top level fitness file fitness.csv for the trial
+            self.setupTrialFitnessCsv()
 
-        # Evaluate each individual
-        individual_summaries = self.evaluatePopulation(population)
+            # Initialize the population
+            population = self.population()
 
-        # Wrap summary information back into each individual
-        self.wrapIndividuals(population, individual_summaries)
+            # Evaluate each individual
+            individual_summaries = self.evaluatePopulation(population)
 
-        # Update fitness.csv
-        self.updateTrialFitnessCsv(population)
+            # Wrap summary information back into each individual
+            self.wrapIndividuals(population, individual_summaries)
+
+            # Update fitness.csv
+            self.updateTrialFitnessCsv(population)
+
+            # Save it
+            self.saveCheckpoint(population, individual_summaries)
 
         # Iterate generations
-        for _ in tqdm(range(self.num_generations)):
+        for _ in tqdm(range(self.num_generations-self.gen)):
             # Update gen counter
             self.gen += 1
 
@@ -506,6 +543,9 @@ class EvolutionaryAlgorithm():
 
             # Update fitness.csv
             self.updateTrialFitnessCsv(population)
+
+            # Save it
+            self.saveCheckpoint(population, individual_summaries)
 
     def run(self):
         for trial_id in range(self.num_trials):
