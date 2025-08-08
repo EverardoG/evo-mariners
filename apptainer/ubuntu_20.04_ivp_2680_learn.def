@@ -61,14 +61,14 @@ From: ubuntu:20.04
     sudo -u moos git clone https://github.com/mit2680/moos-ivp-2680.git
     cd /home/moos/moos-ivp-2680
     sudo -u moos git checkout ff1d5ad30ba5c369c31038fc0d32d45ebdfc3f05
-    sudo -u moos ./build.sh --minrobot --release
+    sudo -u moos ./build.sh --minrobot --release -j$(getconf _NPROCESSORS_ONLN)
     
     # Clone and build moos-ivp-learn (learn layer)
     echo "Building MOOS-IvP learn software..."
     cd /home/moos
     sudo -u moos git clone https://github.com/EverardoG/moos-ivp-learn.git
     cd /home/moos/moos-ivp-learn
-    sudo -u moos ./build.sh --release
+    sudo -u moos ./build.sh --release -j$(getconf _NPROCESSORS_ONLN)
     
     # Set proper ownership
     chown -R moos:moos /home/moos
