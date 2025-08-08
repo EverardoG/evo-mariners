@@ -145,7 +145,7 @@ class EvolutionaryAlgorithm():
         self.load_checkpoint = True
         self.delete_previous_checkpoint = False
 
-        self.use_multiprocessing = True
+        self.use_multiprocessing = False
         self.num_processes = 5
 
         self.num_trials = 1
@@ -161,12 +161,12 @@ class EvolutionaryAlgorithm():
         self.neural_network_size = getSizeOfNet(self.neural_network_structure)
         self.neural_network_action_bounds = [[0.0, 1.0], [-180.0, 180.0]]
 
-        self.population_size = 50
+        self.population_size = 5
 
         self.num_rollouts_per_indivdiual = 1
         self.rpi = self.num_rollouts_per_indivdiual
 
-        self.n_elites = 5
+        self.n_elites = 1
         self.tournament_size = 2
 
         self.mut_indpb = 0.2
@@ -347,7 +347,8 @@ class EvolutionaryAlgorithm():
             "--autodeploy",
             f"--swim_file={app_swimmers_txt_file}",
             f"--vpositions={app_work_folder}/vpositions.txt",
-            "--nostamp"
+            "--nostamp",
+            "--trim"
         ]
         launch_cmd = (
             "cd /home/moos/moos-ivp-learn/missions/alpha_learn && ./launch.sh " +
