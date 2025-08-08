@@ -363,8 +363,11 @@ class EvolutionaryAlgorithm():
             app_exec_cmd = (
                 f"{exec_cmd}\"{cmd}\" >> {app_log_file} 2>&1"
             )
-            print(f"Apptainer command: {app_exec_cmd}")
-            out = subprocess.call(app_exec_cmd, shell=True)
+            # print(f"Apptainer command: {app_exec_cmd}")
+            try:
+                out = subprocess.call(app_exec_cmd, shell=True, timeout=600)
+            except subprocess.TimeoutExpired:
+                out = -100
             if out != 0:
                 print(f"Apptainer command failed with exit code {out} (step {i})")
                 return IndividualEvalOut(-float(100+i))

@@ -51,6 +51,7 @@ From: ubuntu:20.04
     echo "Building base MOOS-IvP..."
     sudo -u moos git clone https://github.com/moos-ivp/moos-ivp.git
     cd /home/moos/moos-ivp
+    sudo -u moos git checkout 1e5ef69094b53af087913aedf01f84b5c62a0fbf
     sudo -u moos ./build-moos.sh --minrobot --release
     sudo -u moos ./build-ivp.sh --nogui
     
@@ -59,6 +60,7 @@ From: ubuntu:20.04
     cd /home/moos
     sudo -u moos git clone https://github.com/mit2680/moos-ivp-2680.git
     cd /home/moos/moos-ivp-2680
+    sudo -u moos git checkout ff1d5ad30ba5c369c31038fc0d32d45ebdfc3f05
     sudo -u moos ./build.sh --minrobot --release
     
     # Clone and build moos-ivp-learn (learn layer)
