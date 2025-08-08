@@ -50,7 +50,7 @@ def getSizeOfNet(structure: List[int]) -> int:
     return total_size
 
 def getRandomWeights(num_weights: int) -> List[float]:
-    return [random.random() for _ in range(num_weights)]
+    return [2*random.random()-1 for _ in range(num_weights)]
 
 def writeSwimmersTxt(swimmer_pts, filepath):
     """
@@ -163,10 +163,10 @@ class EvolutionaryAlgorithm():
         self.rpi = self.num_rollouts_per_indivdiual
 
         self.n_elites = 5
-        self.tournament_size = 2
+        self.tournament_size = 3
 
         self.mut_indpb = 0.2
-        self.mut_std = 0.5
+        self.mut_std = 1.0
 
         # self.swimmer_generation = "fixed"
         self.default_swimmer_pts = [Point(12.0, -60.0)]
@@ -311,7 +311,7 @@ class EvolutionaryAlgorithm():
             str(self.moos_timewarp),  # timewarp
             "--xlaunched",
             f"--logdir={app_log_folder}/",
-            f"--neural_network_dir={app_neural_net_csv_file}",
+            f"--neural_network_dir={app_work_folder}/",
             "--uMayFinish",
             "--nogui",
             "--rescuebehavior=NeuralNetwork",
