@@ -157,6 +157,7 @@ class EvolutionaryAlgorithm():
         self.random_seed_val= None
         self.increment_seed_every_trial = True
 
+        self.rescue_observation_radius = 100
         self.neural_network_structure = [8, 10, 5, 2]
         self.neural_network_size = getSizeOfNet(self.neural_network_structure)
         self.neural_network_action_bounds = [[0.0, 1.0], [-180.0, 180.0]]
@@ -173,8 +174,14 @@ class EvolutionaryAlgorithm():
         self.mut_std = 1.0
 
         # self.swimmer_generation = "fixed"
-        self.default_swimmer_pts = [Point(12.0, -60.0)]
-        self.default_vehicle_poses = [Pose(13.0, -20.0, 181.0)]
+        # Outer loop is individual rollouts
+        # Inner loop is entry for that particular rollout
+        self.default_swimmer_pts = [
+            [Point(12.0, -60.0)],
+        ]
+        self.default_vehicle_poses = [
+            [Pose(13.0, -20.0, 181.0)]
+        ]
 
         self.moos_timewarp = 10
         self.max_db_uptime = 120
@@ -330,8 +337,8 @@ class EvolutionaryAlgorithm():
         app_vpositions_txt_file = app_work_folder / 'vpositions.txt'
         app_neural_net_csv_file = app_work_folder / 'neural_network_abe.csv'
 
-        writeSwimmersTxt(self.default_swimmer_pts, host_swimmers_txt_file)
-        writeVpositionsTxt(self.default_vehicle_poses, host_vpositions_txt_file)
+        writeSwimmersTxt(self.default_swimmer_pts[individual_eval_in.rollout_id], host_swimmers_txt_file)
+        writeVpositionsTxt(self.default_vehicle_poses[individual_eval_in.rollout_id], host_vpositions_txt_file)
         self.writeNeuralNetworkCsv(individual_eval_in.individual, host_neural_net_csv_file)
 
         # Build launch arguments
@@ -349,7 +356,8 @@ class EvolutionaryAlgorithm():
             f"--swim_file={app_swimmers_txt_file}",
             f"--vpositions={app_work_folder}/vpositions.txt",
             "--nostamp",
-            "--trim"
+            "--trim",
+            f"--rescue_observation_radius={self.rescue_observation_radius}"
         ]
         launch_cmd = (
             "cd /home/moos/moos-ivp-learn/missions/alpha_learn && ./launch.sh " +
