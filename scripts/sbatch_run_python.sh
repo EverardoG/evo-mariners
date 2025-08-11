@@ -14,4 +14,4 @@ source ~/hpc-share/miniforge/bin/activate
 conda activate mariners
 
 cd ~/evo-mariners/
-python simple_evo.py /nfs/stak/users/gonzaeve/hpc-share/2025-08-06/jellyfish-4
+python simple_evo.py /nfs/stak/users/gonzaeve/hpc-share/2025-08-06/kelpbass

@@ -164,7 +164,7 @@ class EvolutionaryAlgorithm():
 
         self.population_size = 50
 
-        self.num_rollouts_per_indivdiual = 1
+        self.num_rollouts_per_indivdiual = 5
         self.rpi = self.num_rollouts_per_indivdiual
 
         self.n_elites = 5
@@ -178,8 +178,16 @@ class EvolutionaryAlgorithm():
         # Inner loop is entry for that particular rollout
         self.default_swimmer_pts = [
             [Point(12.0, -60.0)],
+            [Point(12.0, -60.0)],
+            [Point(12.0, -60.0)],
+            [Point(12.0, -60.0)],
+            [Point(12.0, -60.0)]
         ]
         self.default_vehicle_poses = [
+            [Pose(13.0, -20.0, 181.0)],
+            [Pose(13.0, -20.0, 181.0)],
+            [Pose(13.0, -20.0, 181.0)],
+            [Pose(13.0, -20.0, 181.0)],
             [Pose(13.0, -20.0, 181.0)]
         ]
 
