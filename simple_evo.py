@@ -422,8 +422,8 @@ class EvolutionaryAlgorithm():
         vpositions_csv_file = host_log_folder / "abe_positions_filtered.csv"
         vehicle_pts = readXyCsv(vpositions_csv_file)
 
-        swimmers_rescued = self.computeSwimmersRescued(vehicle_pts, self.default_swimmer_pts)
-        score = swimmers_rescued / len(self.default_swimmer_pts)
+        swimmers_rescued = self.computeSwimmersRescued(vehicle_pts, self.default_swimmer_pts[individual_eval_in.rollout_id])
+        score = swimmers_rescued / len(self.default_swimmer_pts[individual_eval_in.rollout_id])
 
         return IndividualEvalOut(score)
 
