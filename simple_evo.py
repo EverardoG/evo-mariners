@@ -449,7 +449,7 @@ class EvolutionaryAlgorithm():
         columns = ['generation']
         for i in range(self.population_size):
             columns.append('individual_'+str(i))
-            for j in range(self.num_rollouts_per_indivdiual):
+            for j in range(self.num_rollouts_per_individual):
                 columns.append('individual_'+str(i)+'_rollout_'+str(j))
         # Create empty dataframe
         df = pd.DataFrame(columns=columns)

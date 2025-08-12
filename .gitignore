@@ -50,3 +50,26 @@ overlays/*.ext3
 # Ignore apptainer sifs
 *.sif
 .fuse*
+
+# Evolutionary algorithm output files
+fitness.csv
+neural_network_*.csv
+swimmers.txt
+swimmers._txt
+vpositions.txt
+*_positions.csv
+*_positions_filtered.csv
+apptainer_out.log
+
+# MOOS log files
+*.alog
+*._moos
+*.blog
+*.ylog
+
+# Config files (except the example)
+config.yaml
+!examples/config.yaml
+
+# Results softlink
+results
