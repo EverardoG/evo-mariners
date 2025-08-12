@@ -146,7 +146,7 @@ class EvolutionaryAlgorithm():
         self.config_filepath = Path(config_filepath)
         self.load_config()
 
-        self.gen = 0
+        self.gen = None
         self.trial_id = None
         self.random_seed_val = None
 
@@ -522,6 +522,9 @@ class EvolutionaryAlgorithm():
         if self.load_checkpoint and len(checkpoint_dirs := self.getCheckpointDirs()) > 0:
             population, individual_summaries, self.gen = self.loadCheckpoint(checkpoint_dirs)
         else:
+            # Reset generation counter at start of each trial
+            self.gen = 0
+
             # Check if we are starting with a random seed
             # Handle seed logic
             if self.config_seed is not None:
