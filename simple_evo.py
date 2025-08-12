@@ -13,6 +13,7 @@ import pickle
 from tqdm import tqdm
 import pandas as pd
 from shapely.geometry import Point
+import yaml
 
 class Pose():
     def __init__(self, x, y, heading):
@@ -141,56 +142,18 @@ def getSourceDir():
     return Path(__file__).parent.resolve()
 
 class EvolutionaryAlgorithm():
-    def __init__(self, config_dir: str):
-        self.load_checkpoint = True
-        self.delete_previous_checkpoint = False
+    def __init__(self, config_filepath: str):
+        self.config_filepath = Path(config_filepath)
+        self.load_config()
 
-        self.use_multiprocessing = True
-        self.num_processes = 5
-
-        self.num_trials = 1
-        self.num_generations = 100
         self.gen = 0
         self.trial_id = None
+        self.random_seed_val = None
 
-        self.config_seed = 0
-        self.random_seed_val= None
-        self.increment_seed_every_trial = True
-
-        self.rescue_observation_radius = 100
-        self.neural_network_structure = [8, 10, 5, 2]
         self.neural_network_size = getSizeOfNet(self.neural_network_structure)
-        self.neural_network_action_bounds = [[0.0, 1.0], [-180.0, 180.0]]
+        self.rpi = self.num_rollouts_per_individual
 
-        self.population_size = 50
-
-        self.num_rollouts_per_indivdiual = 2
-        self.rpi = self.num_rollouts_per_indivdiual
-
-        self.n_elites = 5
-        self.tournament_size = 3
-
-        self.mut_indpb = 0.2
-        self.mut_std = 1.0
-
-        # self.swimmer_generation = "fixed"
-        # Outer loop is individual rollouts
-        # Inner loop is entry for that particular rollout
-        self.default_swimmer_pts = [
-            [Point(12.0, -60.0)],
-            [Point(12.0, -60.0)]
-        ]
-        self.default_vehicle_poses = [
-            [Pose(13.0, -20.0, 181.0)],
-            [Pose(13.0, -20.0, 181.0)]
-        ]
-
-        self.moos_timewarp = 10
-        self.max_db_uptime = 120
-        self.timeout = 500
-
-        self.host_root_folder = \
-            Path(config_dir)
+        self.host_root_folder = self.config_filepath.parent
         self.host_root_folder.mkdir(parents=True, exist_ok=True)
         self.trial_folder = None
         self.app_home = Path('/home/moos')
@@ -198,6 +161,63 @@ class EvolutionaryAlgorithm():
         self.fitness_csv_file = None
 
         self.setupMapping()
+
+    def load_config(self):
+        """Load configuration from YAML file"""
+        with open(self.config_filepath, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Checkpoint settings
+        self.load_checkpoint = config.get('load_checkpoint', True)
+        self.delete_previous_checkpoint = config.get('delete_previous_checkpoint', False)
+
+        # Multiprocessing settings
+        self.use_multiprocessing = config.get('use_multiprocessing', True)
+        self.num_processes = config.get('num_processes', 5)
+
+        # Evolution settings
+        self.num_trials = config.get('num_trials', 1)
+        self.num_generations = config.get('num_generations', 100)
+        self.config_seed = config.get('config_seed', 0)
+        self.increment_seed_every_trial = config.get('increment_seed_every_trial', True)
+
+        # Rescue and neural network settings
+        self.rescue_observation_radius = config.get('rescue_observation_radius', 100)
+        self.neural_network_structure = config.get('neural_network_structure', [8, 10, 5, 2])
+        self.neural_network_action_bounds = config.get('neural_network_action_bounds', [[0.0, 1.0], [-180.0, 180.0]])
+
+        # Population settings
+        self.population_size = config.get('population_size', 50)
+        self.num_rollouts_per_individual = config.get('num_rollouts_per_individual', 2)
+
+        # Selection settings
+        self.n_elites = config.get('n_elites', 5)
+        self.tournament_size = config.get('tournament_size', 3)
+
+        # Mutation settings
+        self.mut_indpb = config.get('mut_indpb', 0.2)
+        self.mut_std = config.get('mut_std', 1.0)
+
+        # Parse swimmer points
+        swimmer_config = config.get('default_swimmer_pts', [[{'x': 12.0, 'y': -60.0}], [{'x': 22.0, 'y': -50.0}]])
+        self.default_swimmer_pts = []
+        for rollout in swimmer_config:
+            rollout_points = [Point(pt['x'], pt['y']) for pt in rollout]
+            self.default_swimmer_pts.append(rollout_points)
+
+        # Parse vehicle poses
+        pose_config = config.get('default_vehicle_poses', 
+                                [[{'x': 13.0, 'y': -20.0, 'heading': 181.0}], 
+                                 [{'x': 13.0, 'y': -20.0, 'heading': 181.0}]])
+        self.default_vehicle_poses = []
+        for rollout in pose_config:
+            rollout_poses = [Pose(pose['x'], pose['y'], pose['heading']) for pose in rollout]
+            self.default_vehicle_poses.append(rollout_poses)
+
+        # MOOS settings
+        self.moos_timewarp = config.get('moos_timewarp', 10)
+        self.max_db_uptime = config.get('max_db_uptime', 120)
+        self.timeout = config.get('timeout', 500)
 
     # This makes it possible to pass evaluation to multiprocessing
     # Without this, the pool tries to pickle the entire object, including itself
@@ -569,8 +589,8 @@ class EvolutionaryAlgorithm():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run evolutionary algorithm.")
-    parser.add_argument('config_dir', type=str, help='Path to config directory')
+    parser.add_argument('config_filepath', type=str, help='Path to config YAML file')
     args = parser.parse_args()
 
-    ea = EvolutionaryAlgorithm(args.config_dir)
+    ea = EvolutionaryAlgorithm(args.config_filepath)
     ea.run()

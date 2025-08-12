@@ -1,0 +1,53 @@
+# Configuration file for Evolutionary Algorithm
+
+# Checkpoint settings
+load_checkpoint: true
+delete_previous_checkpoint: false
+
+# Multiprocessing settings
+use_multiprocessing: true
+num_processes: 5
+
+# Evolution settings
+num_trials: 1
+num_generations: 100
+config_seed: 0
+increment_seed_every_trial: true
+
+# Rescue and neural network settings
+rescue_observation_radius: 100
+neural_network_structure: [8, 10, 5, 2]
+neural_network_action_bounds: [[0.0, 1.0], [-180.0, 180.0]]
+
+# Population settings
+population_size: 50
+num_rollouts_per_individual: 2
+
+# Selection settings
+n_elites: 5
+tournament_size: 3
+
+# Mutation settings
+mut_indpb: 0.2
+mut_std: 1.0
+
+# Default swimmer positions (list of rollouts, each containing list of points)
+default_swimmer_pts:
+  - - x: 12.0
+      y: -60.0
+  - - x: 22.0
+      y: -50.0
+
+# Default vehicle poses (list of rollouts, each containing list of poses)
+default_vehicle_poses:
+  - - x: 13.0
+      y: -20.0
+      heading: 181.0
+  - - x: 13.0
+      y: -20.0
+      heading: 181.0
+
+# MOOS settings
+moos_timewarp: 10
+max_db_uptime: 120
+timeout: 500
