@@ -47,7 +47,16 @@ fi
 # Convert to absolute path
 CONFIG_FILEPATH=$(realpath "$CONFIG_FILEPATH")
 
+# Create slurm_logs directory in the parent folder of the config file
+CONFIG_DIR=$(dirname "$CONFIG_FILEPATH")
+SLURM_LOGS_DIR="$CONFIG_DIR/slurm_logs"
+mkdir -p "$SLURM_LOGS_DIR"
+
+# Extract job name from config filepath
+JOB_NAME=$(basename "$CONFIG_FILEPATH" .yaml)
+
 echo "Submitting job with config: $CONFIG_FILEPATH"
+echo "SLURM logs will be written to: $SLURM_LOGS_DIR"
 
 # Submit the job to SLURM
 sbatch <<EOF
@@ -59,6 +68,9 @@ sbatch <<EOF
 #SBATCH --nodes=1
 #SBATCH --time=7-00:00:00
 #SBATCH --nodelist=cn-v-[1-9]
+#SBATCH --job-name=$JOB_NAME
+#SBATCH --output=$SLURM_LOGS_DIR/slurm-%j.out
+#SBATCH --error=$SLURM_LOGS_DIR/slurm-%j.err
 
 source ~/hpc-share/miniforge/bin/activate
 conda activate mariners
