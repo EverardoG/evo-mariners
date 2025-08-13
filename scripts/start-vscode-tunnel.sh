@@ -4,9 +4,9 @@ set -euo pipefail
 SUBMIT="submit-a"
 ACCOUNT="kt-lab"
 PARTITION="preempt"
-TIME="04:00:00"
-CPUS=4
-MEM="8G"
+TIME="10:00:00"
+CPUS=12
+MEM="16G"
 NODES=1
 NODELIST="cn-v-[1-9]"     # leave empty to omit
 LOCAL_FOLDER="/nfs/stak/users/gonzaeve/evo-mariners"
