@@ -71,10 +71,49 @@ sbatch <<EOF
 #SBATCH --job-name=$JOB_NAME
 #SBATCH --output=$SLURM_LOGS_DIR/slurm-%j.out
 #SBATCH --error=$SLURM_LOGS_DIR/slurm-%j.err
+#SBATCH --requeue
+
+echo "===== SLURM Directives ===="
+echo "  SLURM_JOB_ID: \$SLURM_JOB_ID"
+echo "  SLURM_JOB_NAME: \$SLURM_JOB_NAME"
+echo "  SLURM_CPUS_ON_NODE: \$SLURM_CPUS_ON_NODE"
+echo "  SLURM_MEM_PER_NODE: \$SLURM_MEM_PER_NODE"
+echo "  SLURM_JOB_NUM_NODES: \$SLURM_JOB_NUM_NODES"
+echo "  SLURM_NODELIST: \$SLURM_NODELIST"
+echo "  SLURM_SUBMIT_DIR: \$SLURM_SUBMIT_DIR"
+echo "  SLURM_PARTITION: \$SLURM_JOB_PARTITION"
+echo "  SLURM_OUTPUT: \$SBATCH_OUTPUT"
+echo "  SLURM_ERROR: \$SBATCH_ERROR"
+
+cd ~/evo-mariners/
+echo "===== Running git commands for local ~/evo-mariners ====="
+echo "---- GIT LOG ----"
+git log --oneline -n 5 --no-color
+echo "---- GIT STATUS ----"
+git status
+echo ""
+
+echo "===== Running git commands for moos-ivp code in apptainer ====="
+APPTAINER_IMG=~/evo-mariners/apptainer/ubuntu_20.04_ivp_2680_learn.sif
+
+echo "---- cd /home/moos/moos-ivp/ && git log ----"
+apptainer exec "\$APPTAINER_IMG" /bin/bash -c "cd /home/moos/moos-ivp/ && git log --oneline -n 5 --no-color"
+
+echo "---- cd /home/moos/moos-ivp-2680/ && git log ----"
+apptainer exec "\$APPTAINER_IMG" /bin/bash -c "cd /home/moos/moos-ivp-2680/ && git log --oneline -n 5 --no-color"
+
+echo "---- cd /home/moos/moos-ivp-learn/ && git log ----"
+apptainer exec "\$APPTAINER_IMG" /bin/bash -c "cd /home/moos/moos-ivp-learn/ && git log --oneline -n 5 --no-color"
 
 source ~/hpc-share/miniforge/bin/activate
 conda activate mariners
+echo "===== Conda Environment Info ====="
+echo "---- python --version ----"
+python --version
+echo "---- conda list ----"
+conda list
+echo "---- conda info ----"
+conda info
 
-cd ~/evo-mariners/
 python simple_evo.py "$CONFIG_FILEPATH"
 EOF
