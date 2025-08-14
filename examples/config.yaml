@@ -6,7 +6,7 @@ delete_previous_checkpoint: false
 
 # Multiprocessing settings
 use_multiprocessing: true
-num_processes: 5
+num_processes: 40
 
 # Evolution settings
 num_trials: 1
@@ -48,7 +48,7 @@ default_vehicle_poses:
       heading: 181.0
 
 # MOOS settings
-moos_timewarp: 10
-max_db_uptime: 120
-timeout: 500
+moos_timewarp: 50
+max_db_uptime: 200
+timeout: auto # Or you can set a specific time in seconds. For example: 500
 trim_logs: true

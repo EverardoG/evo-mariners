@@ -218,6 +218,8 @@ class EvolutionaryAlgorithm():
         self.moos_timewarp = config.get('moos_timewarp', 10)
         self.max_db_uptime = config.get('max_db_uptime', 120)
         self.timeout = config.get('timeout', 500)
+        if self.timeout == 'auto':
+            self.timeout = self.max_db_uptime/self.moos_timewarp+60
         self.trim_logs = config.get('trim_logs', True)
 
     # This makes it possible to pass evaluation to multiprocessing
