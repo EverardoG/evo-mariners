@@ -12,7 +12,7 @@ import pickle
 
 from tqdm import tqdm
 import pandas as pd
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon
 import yaml
 
 class Pose():
@@ -141,6 +141,61 @@ def getSourceDir():
     """
     return Path(__file__).parent.resolve()
 
+def parsePolygonString(poly_str):
+    """
+    Parse a polygon string like 'pts={60,10:-75.5402,-54.2561:-36.9866,-135.58:98.5536,-71.3241}'
+    and return a Shapely Polygon object.
+    
+    Args:
+        poly_str: String representation of polygon points
+        
+    Returns:
+        shapely.geometry.Polygon: The parsed polygon
+    """
+    # Extract the points part from the string
+    points_part = poly_str.split('pts={')[1].rstrip('}')
+    
+    # Split by ':' to get individual points
+    point_strings = points_part.split(':')
+    
+    # Parse each point (format: "x,y")
+    points = []
+    for point_str in point_strings:
+        x, y = map(float, point_str.split(','))
+        points.append((x, y))
+    
+    return Polygon(points)
+
+def generateRandomPointsInPolygon(polygon, num_points, seed=None):
+    """
+    Generate random points within a given polygon using rejection sampling.
+    
+    Args:
+        polygon: shapely.geometry.Polygon object
+        num_points: Number of random points to generate
+        seed: Random seed for reproducibility
+        
+    Returns:
+        List[shapely.geometry.Point]: List of random points within the polygon
+    """
+    if seed is not None:
+        random.seed(seed)
+    
+    points = []
+    bounds = polygon.bounds  # (minx, miny, maxx, maxy)
+    
+    while len(points) < num_points:
+        # Generate random point within bounding box
+        x = random.uniform(bounds[0], bounds[2])
+        y = random.uniform(bounds[1], bounds[3])
+        point = Point(x, y)
+        
+        # Check if point is within polygon
+        if polygon.contains(point):
+            points.append(point)
+    
+    return points
+
 class EvolutionaryAlgorithm():
     def __init__(self, config_filepath: str):
         self.config_filepath = Path(config_filepath)
@@ -198,12 +253,46 @@ class EvolutionaryAlgorithm():
         self.mut_indpb = config.get('mut_indpb', 0.2)
         self.mut_std = config.get('mut_std', 1.0)
 
-        # Parse swimmer points
-        swimmer_config = config.get('default_swimmer_pts', [[{'x': 12.0, 'y': -60.0}], [{'x': 22.0, 'y': -50.0}]])
-        self.default_swimmer_pts = []
-        for rollout in swimmer_config:
-            rollout_points = [Point(pt['x'], pt['y']) for pt in rollout]
-            self.default_swimmer_pts.append(rollout_points)
+        # Parse swimmer spawning configuration
+        self.swimmer_spawner_type = config.get('swimmer_spawner', 'fixed')
+        
+        if self.swimmer_spawner_type == 'fixed':
+            swimmer_config = config.get('swimmer_spawner.fixed.pts', [{'x': 12.0, 'y': -60.0}])
+            self.default_swimmer_pts = [Point(pt['x'], pt['y']) for pt in swimmer_config]
+        elif self.swimmer_spawner_type == 'rotate':
+            swimmer_config = config.get('swimmer_spawner.rotate.pts', [
+                [{'x': 12.0, 'y': -60.0}],
+                [{'x': 22.0, 'y': -50.0}]
+            ])
+            self.rotate_swimmer_pts = []
+            for rollout in swimmer_config:
+                rollout_points = [Point(pt['x'], pt['y']) for pt in rollout]
+                self.rotate_swimmer_pts.append(rollout_points)
+        elif self.swimmer_spawner_type == 'random':
+            self.num_random_swimmers = config.get('swimmer_spawner.random.num', 1)
+            polygon_str = config.get('swimmer_spawner.random.polygon', 'pts={60,10:-75.5402,-54.2561:-36.9866,-135.58:98.5536,-71.3241}')
+            self.swimmer_polygon = parsePolygonString(polygon_str)
+        
+        # Remove old default_swimmer_pts loading if swimmer_spawner is defined
+        if 'swimmer_spawner' not in config:
+            # Fallback to old configuration for backward compatibility
+            swimmer_config = config.get('default_swimmer_pts', [[{'x': 12.0, 'y': -60.0}], [{'x': 22.0, 'y': -50.0}]])
+            self.default_swimmer_pts = []
+            for rollout in swimmer_config:
+                rollout_points = [Point(pt['x'], pt['y']) for pt in rollout]
+                self.default_swimmer_pts.append(rollout_points)
+
+        # Population settings
+        self.population_size = config.get('population_size', 50)
+        self.num_rollouts_per_individual = config.get('num_rollouts_per_individual', 2)
+
+        # Selection settings
+        self.n_elites = config.get('n_elites', 5)
+        self.tournament_size = config.get('tournament_size', 3)
+
+        # Mutation settings
+        self.mut_indpb = config.get('mut_indpb', 0.2)
+        self.mut_std = config.get('mut_std', 1.0)
 
         # Parse vehicle poses
         pose_config = config.get('default_vehicle_poses', 
@@ -262,6 +351,33 @@ class EvolutionaryAlgorithm():
             self.neural_network_action_bounds,
             filepath
         )
+
+    def getSwimmerPtsForRollout(self, rollout_id, seed=None):
+        """
+        Get swimmer points for a specific rollout based on the spawning type.
+        
+        Args:
+            rollout_id: The rollout identifier
+            seed: Random seed for random spawning
+            
+        Returns:
+            List[shapely.geometry.Point]: List of swimmer points for this rollout
+        """
+        if self.swimmer_spawner_type == 'fixed':
+            return self.default_swimmer_pts
+        elif self.swimmer_spawner_type == 'rotate':
+            # Rotate through the available configurations
+            config_index = rollout_id % len(self.rotate_swimmer_pts)
+            return self.rotate_swimmer_pts[config_index]
+        elif self.swimmer_spawner_type == 'random':
+            # Generate random points using the seed
+            return generateRandomPointsInPolygon(self.swimmer_polygon, self.num_random_swimmers, seed)
+        else:
+            # Fallback to old behavior
+            if hasattr(self, 'default_swimmer_pts') and len(self.default_swimmer_pts) > rollout_id:
+                return self.default_swimmer_pts[rollout_id]
+            else:
+                return [Point(12.0, -60.0)]  # Default fallback
 
     def computeSwimmersRescued(self, vehicle_pts, swimmer_pts):
         """
@@ -362,8 +478,13 @@ class EvolutionaryAlgorithm():
         app_vpositions_txt_file = app_work_folder / 'vpositions.txt'
         app_neural_net_csv_file = app_work_folder / 'neural_network_abe.csv'
 
-        writeSwimmersTxt(self.default_swimmer_pts[individual_eval_in.rollout_id], host_swimmers_txt_file)
-        writeVpositionsTxt(self.default_vehicle_poses[individual_eval_in.rollout_id], host_vpositions_txt_file)
+        # Get swimmer points for this rollout
+        swimmer_pts = self.getSwimmerPtsForRollout(individual_eval_in.rollout_id, individual_eval_in.seed)
+        
+        writeSwimmersTxt(swimmer_pts, host_swimmers_txt_file)
+        # Use default vehicle poses for backward compatibility or add similar logic for vehicle poses if needed
+        vehicle_poses = self.default_vehicle_poses[individual_eval_in.rollout_id] if hasattr(self, 'default_vehicle_poses') and len(self.default_vehicle_poses) > individual_eval_in.rollout_id else [Pose(13.0, -20.0, 181.0)]
+        writeVpositionsTxt(vehicle_poses, host_vpositions_txt_file)
         self.writeNeuralNetworkCsv(individual_eval_in.individual, host_neural_net_csv_file)
 
         # Build launch arguments
@@ -443,8 +564,8 @@ class EvolutionaryAlgorithm():
         vpositions_csv_file = host_log_folder / "abe_positions_filtered.csv"
         vehicle_pts = readXyCsv(vpositions_csv_file)
 
-        swimmers_rescued = self.computeSwimmersRescued(vehicle_pts, self.default_swimmer_pts[individual_eval_in.rollout_id])
-        score = swimmers_rescued / len(self.default_swimmer_pts[individual_eval_in.rollout_id])
+        swimmers_rescued = self.computeSwimmersRescued(vehicle_pts, swimmer_pts)
+        score = swimmers_rescued / len(swimmer_pts)
 
         return IndividualEvalOut(score)
 

@@ -6,7 +6,7 @@ delete_previous_checkpoint: false
 
 # Multiprocessing settings
 use_multiprocessing: true
-num_processes: 40
+num_processes: 20
 
 # Evolution settings
 num_trials: 1
@@ -32,11 +32,16 @@ mut_indpb: 0.2
 mut_std: 1.0
 
 # Default swimmer positions (list of rollouts, each containing list of points)
-default_swimmer_pts:
+swimmer_spawner: random
+swimmer_spawner.fixed.pts:
+  - x: 12.0
+    y: -60.0
+swimmer_spawner.rotate.pts:
   - - x: 12.0
       y: -60.0
   - - x: 22.0
       y: -50.0
+swimmer_spawner.random.num: 1
 
 # Default vehicle poses (list of rollouts, each containing list of poses)
 default_vehicle_poses:
@@ -48,7 +53,7 @@ default_vehicle_poses:
       heading: 181.0
 
 # MOOS settings
-moos_timewarp: 50
-max_db_uptime: 200
+moos_timewarp: 20
+max_db_uptime: 120
 timeout: auto # Or you can set a specific time in seconds. For example: 500
 trim_logs: true
