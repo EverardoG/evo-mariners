@@ -55,5 +55,9 @@ default_vehicle_poses:
 # MOOS settings
 moos_timewarp: 20
 max_db_uptime: 120
-timeout: auto # Or you can set a specific time in seconds. For example: 500
 trim_logs: true
+
+# Apptainer settings
+launch_timeout: auto # Or you can set a specific time in seconds. For example: 500
+process_nodes_timeout: auto
+filter_csv_timeout: auto

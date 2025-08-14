@@ -306,10 +306,20 @@ class EvolutionaryAlgorithm():
         # MOOS settings
         self.moos_timewarp = config.get('moos_timewarp', 10)
         self.max_db_uptime = config.get('max_db_uptime', 120)
-        self.timeout = config.get('timeout', 500)
-        if self.timeout == 'auto':
-            self.timeout = self.max_db_uptime/self.moos_timewarp+60
         self.trim_logs = config.get('trim_logs', True)
+    
+        # Apptainer settings
+        self.launch_timeout = config.get('launch_timeout', 'auto')
+        if self.launch_timeout == 'auto':
+            self.launch_timeout = self.max_db_uptime/self.moos_timewarp+60
+
+        self.process_nodes_timeout = config.get('process_nodes_timeout', 'auto')
+        if self.process_nodes_timeout == 'auto':
+            self.process_nodes_timeout = self.max_db_uptime*2
+
+        self.filter_csv_timeout = config.get('filter_csv_timeout', 'auto')
+        if self.filter_csv_timeout == 'auto':
+            self.filter_csv_timeout = self.max_db_uptime*2
 
     # This makes it possible to pass evaluation to multiprocessing
     # Without this, the pool tries to pickle the entire object, including itself
@@ -541,6 +551,11 @@ class EvolutionaryAlgorithm():
             process_node_reports_cmd,
             filter_node_reports_cmd
         ]
+        timeouts = [
+            self.launch_timeout,
+            self.process_nodes_timeout,
+            self.filter_csv_timeout
+        ]
 
         app_log_file = Path(host_log_folder) / "apptainer_out.log"
 
@@ -548,13 +563,13 @@ class EvolutionaryAlgorithm():
         app_log_file.write_text('')
 
         # Run apptainer commands
-        for i, cmd in enumerate(apptainer_cmds):
+        for i, (cmd, timeout) in enumerate(zip(apptainer_cmds, timeouts)):
             app_exec_cmd = (
                 f"{exec_cmd}\"{cmd}\" >> {app_log_file} 2>&1"
             )
             # print(f"Apptainer command: {app_exec_cmd}")
             try:
-                out = subprocess.call(app_exec_cmd, shell=True, timeout=self.timeout)
+                out = subprocess.call(app_exec_cmd, shell=True, timeout=timeout)
             except subprocess.TimeoutExpired:
                 out = -100
             if out != 0:
