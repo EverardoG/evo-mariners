@@ -82,8 +82,6 @@ echo "  SLURM_JOB_NUM_NODES: \$SLURM_JOB_NUM_NODES"
 echo "  SLURM_NODELIST: \$SLURM_NODELIST"
 echo "  SLURM_SUBMIT_DIR: \$SLURM_SUBMIT_DIR"
 echo "  SLURM_PARTITION: \$SLURM_JOB_PARTITION"
-echo "  SLURM_OUTPUT: \$SBATCH_OUTPUT"
-echo "  SLURM_ERROR: \$SBATCH_ERROR"
 
 cd ~/evo-mariners/
 echo "===== Running git commands for local ~/evo-mariners ====="

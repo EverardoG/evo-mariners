@@ -148,55 +148,55 @@ def parsePolygonString(poly_str):
     """
     Parse a polygon string like 'pts={60,10:-75.5402,-54.2561:-36.9866,-135.58:98.5536,-71.3241}'
     and return a Shapely Polygon object.
-    
+
     Args:
         poly_str: String representation of polygon points
-        
+
     Returns:
         shapely.geometry.Polygon: The parsed polygon
     """
     # Extract the points part from the string
     points_part = poly_str.split('pts={')[1].rstrip('}')
-    
+
     # Split by ':' to get individual points
     point_strings = points_part.split(':')
-    
+
     # Parse each point (format: "x,y")
     points = []
     for point_str in point_strings:
         x, y = map(float, point_str.split(','))
         points.append((x, y))
-    
+
     return Polygon(points)
 
 def generateRandomPointsInPolygon(polygon, num_points, seed=None):
     """
     Generate random points within a given polygon using rejection sampling.
-    
+
     Args:
         polygon: shapely.geometry.Polygon object
         num_points: Number of random points to generate
         seed: Random seed for reproducibility
-        
+
     Returns:
         List[shapely.geometry.Point]: List of random points within the polygon
     """
     if seed is not None:
         random.seed(seed)
-    
+
     points = []
     bounds = polygon.bounds  # (minx, miny, maxx, maxy)
-    
+
     while len(points) < num_points:
         # Generate random point within bounding box
         x = random.uniform(bounds[0], bounds[2])
         y = random.uniform(bounds[1], bounds[3])
         point = Point(x, y)
-        
+
         # Check if point is within polygon
         if polygon.contains(point):
             points.append(point)
-    
+
     return points
 
 class ThreadSafeFileHandler(logging.FileHandler):
@@ -211,20 +211,20 @@ class ThreadSafeFileHandler(logging.FileHandler):
         try:
             if self.stream is None:
                 self.stream = self._open()
-            
+
             # Format the record
             msg = self.format(record)
-            
+
             # Lock the file for writing
             fcntl.flock(self.stream.fileno(), fcntl.LOCK_EX)
-            
+
             try:
                 self.stream.write(msg + self.terminator)
                 self.stream.flush()
             finally:
                 # Always release the lock
                 fcntl.flock(self.stream.fileno(), fcntl.LOCK_UN)
-                
+
         except Exception:
             self.handleError(record)
 
@@ -257,7 +257,7 @@ class EvolutionaryAlgorithm():
         """Load configuration from YAML file"""
         with open(self.config_filepath, 'r') as f:
             config = yaml.safe_load(f)
-        
+
         # Checkpoint settings
         self.load_checkpoint = config.get('load_checkpoint', True)
         self.delete_previous_checkpoint = config.get('delete_previous_checkpoint', False)
@@ -291,7 +291,7 @@ class EvolutionaryAlgorithm():
 
         # Parse swimmer spawning configuration
         self.swimmer_spawner_type = config.get('swimmer_spawner', 'fixed')
-        
+
         if self.swimmer_spawner_type == 'fixed':
             swimmer_config = config.get('swimmer_spawner.fixed.pts', [{'x': 12.0, 'y': -60.0}])
             self.default_swimmer_pts = [Point(pt['x'], pt['y']) for pt in swimmer_config]
@@ -308,7 +308,7 @@ class EvolutionaryAlgorithm():
             self.num_random_swimmers = config.get('swimmer_spawner.random.num', 1)
             polygon_str = config.get('swimmer_spawner.random.polygon', 'pts={60,10:-75.5402,-54.2561:-36.9866,-135.58:98.5536,-71.3241}')
             self.swimmer_polygon = parsePolygonString(polygon_str)
-        
+
         # Remove old default_swimmer_pts loading if swimmer_spawner is defined
         if 'swimmer_spawner' not in config:
             # Fallback to old configuration for backward compatibility
@@ -331,8 +331,8 @@ class EvolutionaryAlgorithm():
         self.mut_std = config.get('mut_std', 1.0)
 
         # Parse vehicle poses
-        pose_config = config.get('default_vehicle_poses', 
-                                [[{'x': 13.0, 'y': -20.0, 'heading': 181.0}], 
+        pose_config = config.get('default_vehicle_poses',
+                                [[{'x': 13.0, 'y': -20.0, 'heading': 181.0}],
                                  [{'x': 13.0, 'y': -20.0, 'heading': 181.0}]])
         self.default_vehicle_poses = []
         for rollout in pose_config:
@@ -343,7 +343,7 @@ class EvolutionaryAlgorithm():
         self.moos_timewarp = config.get('moos_timewarp', 10)
         self.max_db_uptime = config.get('max_db_uptime', 120)
         self.trim_logs = config.get('trim_logs', True)
-    
+
         # Apptainer settings
         self.launch_timeout = config.get('launch_timeout', 'auto')
         if self.launch_timeout == 'auto':
@@ -401,11 +401,11 @@ class EvolutionaryAlgorithm():
     def getSwimmerPtsForRollout(self, rollout_id, seed=None):
         """
         Get swimmer points for a specific rollout based on the spawning type.
-        
+
         Args:
             rollout_id: The rollout identifier
             seed: Random seed for random spawning
-            
+
         Returns:
             List[shapely.geometry.Point]: List of swimmer points for this rollout
         """
@@ -513,11 +513,11 @@ class EvolutionaryAlgorithm():
             formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
-        
+
         # Configure logger with process context
         process_id = os.getpid()
         context_prefix = f"PID:{process_id} Gen:{self.gen} Ind:{individual_eval_in.individual.temp_id} Rollout:{individual_eval_in.rollout_id}"
-        
+
         individual_folder = 'ind_'+str(individual_eval_in.individual.temp_id)
         rollout_folder = 'rollout_'+str(individual_eval_in.rollout_id)
 
@@ -539,7 +539,7 @@ class EvolutionaryAlgorithm():
 
         # Get swimmer points for this rollout
         swimmer_pts = self.getSwimmerPtsForRollout(individual_eval_in.rollout_id, individual_eval_in.seed)
-        
+
         writeSwimmersTxt(swimmer_pts, host_swimmers_txt_file)
         # Use default vehicle poses for backward compatibility or add similar logic for vehicle poses if needed
         vehicle_poses = self.default_vehicle_poses[individual_eval_in.rollout_id] if hasattr(self, 'default_vehicle_poses') and len(self.default_vehicle_poses) > individual_eval_in.rollout_id else [Pose(13.0, -20.0, 181.0)]
@@ -563,11 +563,11 @@ class EvolutionaryAlgorithm():
             "--nostamp",
             f"--rescue_observation_radius={self.rescue_observation_radius}"
         ]
-        
+
         # Conditionally add --trim flag
         if self.trim_logs:
             launch_args.append("--trim")
-            
+
         launch_cmd = (
             "cd /home/moos/moos-ivp-learn/missions/alpha_learn && ./launch.sh " +
             " ".join(launch_args)
@@ -616,9 +616,9 @@ class EvolutionaryAlgorithm():
             app_exec_cmd = (
                 f"{exec_cmd}\"{cmd}\" >> {app_log_file} 2>&1"
             )
-            
+
             self.logger.info(f"{context_prefix} - Running apptainer command {i+1}/3: {cmd}")
-            
+
             try:
                 out = subprocess.call(app_exec_cmd, shell=True, timeout=timeout)
                 if out == 0:
@@ -643,19 +643,19 @@ class EvolutionaryAlgorithm():
         # Remove any existing handlers
         for handler in self.logger.handlers[:]:
             self.logger.removeHandler(handler)
-        
+
         # Create thread-safe file handler for trial.log
         log_file = self.trial_folder / 'trial.log'
         file_handler = ThreadSafeFileHandler(log_file)
         file_handler.setLevel(logging.INFO)
-        
+
         # Create formatter
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         file_handler.setFormatter(formatter)
-        
+
         # Add handler to logger
         self.logger.addHandler(file_handler)
-        
+
         self.logger.info(f"Starting trial {self.trial_id}")
 
     def setupTrialFitnessCsv(self):

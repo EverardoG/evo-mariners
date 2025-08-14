@@ -48,7 +48,7 @@ struct XYPose : public XYPoint {
     double heading;
 
     // Constructor with x,y,heading values
-    XYPose(double x_val, double y_val, double heading_val) 
+    XYPose(double x_val, double y_val, double heading_val)
         : XYPoint(x_val, y_val), heading(heading_val) {}
 };
 
@@ -57,7 +57,7 @@ pair<vector<XYPoint>, bool> read_xy_csv(const string& filepath) {
     vector<XYPoint> points;
     bool success = true;
     ifstream file(filepath);
-    
+
     if (!file.is_open()) {
         return {points, false};
     }
@@ -65,12 +65,12 @@ pair<vector<XYPoint>, bool> read_xy_csv(const string& filepath) {
     string line;
     // Skip header line
     getline(file, line);
-    
+
     // Read data lines
     while (getline(file, line)) {
         stringstream ss(line);
         string x_str, y_str;
-        
+
         // Split line by comma
         if (getline(ss, x_str, ',') && getline(ss, y_str, ',')) {
             try {
@@ -99,8 +99,8 @@ bool write_swimmers_txt(const vector<XYPoint>& swimmer_pts, const string& filepa
 
     for (size_t i = 0; i < swimmer_pts.size(); ++i) {
         // Format: swimmer = name=p01, x=13, y=10
-        ofs << "swimmer = name=p" 
-            << setfill('0') << setw(2) << (i + 1) 
+        ofs << "swimmer = name=p"
+            << setfill('0') << setw(2) << (i + 1)
             << ", x=" << static_cast<double>(swimmer_pts[i].x)
             << ", y=" << static_cast<double>(swimmer_pts[i].y)
             << '\n';
@@ -118,9 +118,9 @@ bool write_vpositions_txt(const vector<XYPose>& vehicle_poses, const string& fil
     }
 
     for (const auto& pose : vehicle_poses) {
-        ofs << "x=" << pose.x 
-            << ",y=" << pose.y 
-            << ",heading=" << pose.heading 
+        ofs << "x=" << pose.x
+            << ",y=" << pose.y
+            << ",heading=" << pose.heading
             << '\n';
     }
 
@@ -130,7 +130,7 @@ bool write_vpositions_txt(const vector<XYPose>& vehicle_poses, const string& fil
 
 int compute_swimmers_rescued(const vector<XYPoint>& vehicle_pts, const vector<XYPoint>& swimmer_pts, const double& rescue_rng_max = 5.0) {
     int total_swimmers = 0;
-    
+
     // For each swimmer
     for (const auto& swimmer : swimmer_pts) {
         // Find closest vehicle point
@@ -148,7 +148,7 @@ int compute_swimmers_rescued(const vector<XYPoint>& vehicle_pts, const vector<XY
             }
         }
     }
-    
+
     return total_swimmers;
 }
 
@@ -287,7 +287,7 @@ struct rescue_problem {
 
     rescue_problem() : m_structure({}), m_action_bounds({}) {}
     rescue_problem(
-        const vector<int> &structure, 
+        const vector<int> &structure,
         const vector<vector<double>> &action_bounds,
         RescueProblemCounter *counter = nullptr
     ) : m_structure(structure), m_action_bounds(action_bounds), m_counter(counter) {
@@ -356,7 +356,7 @@ struct rescue_problem {
         //  Likely something like $HOME/hpc-share/tmp/slurm-<job-id>/process-<process-id>/thread-<thread-id>/
 
         const char *sidchar = getenv("SLURM_JOB_ID");
-        string sid = sidchar ? sidchar : "none";   
+        string sid = sidchar ? sidchar : "none";
 
         thread::id thread_id = this_thread::get_id();
         ostringstream oss;
@@ -384,7 +384,7 @@ struct rescue_problem {
         filesystem::path apptainer_path = source_dir / "apptainer" / "ubuntu_20.04_ivp_2680_learn.sif";
 
         // cout << "source dir: " << get_source_dir() << endl;
-    
+
         //  2) Set up the directory
         //  Write out neural network csv parameters to a csv file in that directory
         vector<XYPoint> swimmer_pts = {XYPoint(12.0, -60.0)};
@@ -411,7 +411,7 @@ struct rescue_problem {
             "--vpositions="+apptainer_workdir+"vpositions.txt",
             "--nostamp"
         };
-        string launch_cmd = 
+        string launch_cmd =
             string{"cd /home/moos/moos-ivp-learn/missions/alpha_learn && ./launch.sh "} + \
             join(launch_args, " ");
         // cout << "launch: " << launch_cmd << endl;
@@ -466,7 +466,7 @@ struct rescue_problem {
                 return {200.0+i};
             }
         }
-        
+
         // Execute with timeout and signal handling
         // pid_t child_pid = fork();
         // if (child_pid == 0) {
@@ -477,7 +477,7 @@ struct rescue_problem {
         //     // Parent process: wait for child with periodic checks
         //     int status;
         //     pid_t result;
-            
+
         //     // Poll every second to check if we should terminate
         //     while ((result = waitpid(child_pid, &status, WNOHANG)) == 0) {
         //         if (!running) {
@@ -492,7 +492,7 @@ struct rescue_problem {
         //         }
         //         sleep(1);  // Check every second
         //     }
-            
+
         //     if (result == -1) {
         //         // Error in waitpid
         //         return {105.0};
@@ -633,7 +633,7 @@ int main()
             "tournament"  // selection type
         };
         algorithm single_gen_algo{single_gen_sga};
-        
+
         // Evolve one generation
         pop = single_gen_algo.evolve(updated_pop);
 

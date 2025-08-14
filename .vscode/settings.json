@@ -1,4 +1,5 @@
 {
+  "files.trimTrailingWhitespace": true,
   "cmake.environment": {
     "CONDA_PREFIX": "${env:HOME}/miniconda3/envs/mariners",
     "CMAKE_PREFIX_PATH": "${env:HOME}/miniconda3/envs/mariners",

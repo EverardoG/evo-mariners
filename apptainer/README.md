@@ -1,5 +1,5 @@
 To build the apptainer locally:
-./build_image.sh 
+./build_image.sh
 
 To build apptainer on hpc:
 sbatch sbatch_build_apptainer.sh
