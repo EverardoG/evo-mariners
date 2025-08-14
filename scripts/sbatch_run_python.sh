@@ -91,6 +91,8 @@ echo "---- GIT LOG ----"
 git log --oneline -n 5 --no-color
 echo "---- GIT STATUS ----"
 git status
+echo "---- GIT DIFF ----"
+git --no-pager diff --no-color
 echo ""
 
 echo "===== Running git commands for moos-ivp code in apptainer ====="
