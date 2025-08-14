@@ -617,7 +617,7 @@ class EvolutionaryAlgorithm():
                 f"{exec_cmd}\"{cmd}\" >> {app_log_file} 2>&1"
             )
             
-            self.logger.info(f"{context_prefix} - Running apptainer command {i+1}/3: {cmd}...")
+            self.logger.info(f"{context_prefix} - Running apptainer command {i+1}/3: {cmd}")
             
             try:
                 out = subprocess.call(app_exec_cmd, shell=True, timeout=timeout)
