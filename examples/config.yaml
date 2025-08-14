@@ -51,3 +51,4 @@ default_vehicle_poses:
 moos_timewarp: 10
 max_db_uptime: 120
 timeout: 500
+trim_logs: true

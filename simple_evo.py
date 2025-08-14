@@ -218,6 +218,7 @@ class EvolutionaryAlgorithm():
         self.moos_timewarp = config.get('moos_timewarp', 10)
         self.max_db_uptime = config.get('max_db_uptime', 120)
         self.timeout = config.get('timeout', 500)
+        self.trim_logs = config.get('trim_logs', True)
 
     # This makes it possible to pass evaluation to multiprocessing
     # Without this, the pool tries to pickle the entire object, including itself
@@ -378,9 +379,13 @@ class EvolutionaryAlgorithm():
             f"--swim_file={app_swimmers_txt_file}",
             f"--vpositions={app_work_folder}/vpositions.txt",
             "--nostamp",
-            "--trim",
             f"--rescue_observation_radius={self.rescue_observation_radius}"
         ]
+        
+        # Conditionally add --trim flag
+        if self.trim_logs:
+            launch_args.append("--trim")
+            
         launch_cmd = (
             "cd /home/moos/moos-ivp-learn/missions/alpha_learn && ./launch.sh " +
             " ".join(launch_args)
