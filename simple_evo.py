@@ -9,6 +9,9 @@ import csv
 import math
 import argparse
 import pickle
+import logging
+import fcntl
+import time
 
 from tqdm import tqdm
 import pandas as pd
@@ -196,6 +199,35 @@ def generateRandomPointsInPolygon(polygon, num_points, seed=None):
     
     return points
 
+class ThreadSafeFileHandler(logging.FileHandler):
+    """
+    A file handler that uses file locking to ensure thread-safe writing
+    across multiple processes.
+    """
+    def emit(self, record):
+        """
+        Emit a record with file locking to ensure thread safety.
+        """
+        try:
+            if self.stream is None:
+                self.stream = self._open()
+            
+            # Format the record
+            msg = self.format(record)
+            
+            # Lock the file for writing
+            fcntl.flock(self.stream.fileno(), fcntl.LOCK_EX)
+            
+            try:
+                self.stream.write(msg + self.terminator)
+                self.stream.flush()
+            finally:
+                # Always release the lock
+                fcntl.flock(self.stream.fileno(), fcntl.LOCK_UN)
+                
+        except Exception:
+            self.handleError(record)
+
 class EvolutionaryAlgorithm():
     def __init__(self, config_filepath: str):
         self.config_filepath = Path(config_filepath)
@@ -214,6 +246,10 @@ class EvolutionaryAlgorithm():
         self.app_home = Path('/home/moos')
         self.app_root_folder = self.app_home / 'hpc-share'
         self.fitness_csv_file = None
+
+        # Initialize logger
+        self.logger = logging.getLogger('EvolutionaryAlgorithm')
+        self.logger.setLevel(logging.INFO)
 
         self.setupMapping()
 
@@ -469,6 +505,19 @@ class EvolutionaryAlgorithm():
         return offspring
 
     def evaluateIndividual(self, individual_eval_in):
+        # Set up logger for this process if it doesn't have handlers
+        if not self.logger.handlers:
+            log_file = self.trial_folder / 'trial.log'
+            file_handler = ThreadSafeFileHandler(log_file)
+            file_handler.setLevel(logging.INFO)
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            file_handler.setFormatter(formatter)
+            self.logger.addHandler(file_handler)
+        
+        # Configure logger with process context
+        process_id = os.getpid()
+        context_prefix = f"PID:{process_id} Gen:{self.gen} Ind:{individual_eval_in.individual.temp_id} Rollout:{individual_eval_in.rollout_id}"
+        
         individual_folder = 'ind_'+str(individual_eval_in.individual.temp_id)
         rollout_folder = 'rollout_'+str(individual_eval_in.rollout_id)
 
@@ -567,13 +616,18 @@ class EvolutionaryAlgorithm():
             app_exec_cmd = (
                 f"{exec_cmd}\"{cmd}\" >> {app_log_file} 2>&1"
             )
-            # print(f"Apptainer command: {app_exec_cmd}")
+            
+            self.logger.info(f"{context_prefix} - Running apptainer command {i+1}/3: {cmd}...")
+            
             try:
                 out = subprocess.call(app_exec_cmd, shell=True, timeout=timeout)
+                if out == 0:
+                    self.logger.info(f"{context_prefix} - Apptainer command {i+1}/3 completed successfully")
+                else:
+                    self.logger.error(f"{context_prefix} - Apptainer command {i+1}/3 failed with exit code {out}")
+                    return IndividualEvalOut(-float(100+i))
             except subprocess.TimeoutExpired:
-                out = -100
-            if out != 0:
-                print(f"Apptainer command failed with exit code {out} (step {i})")
+                self.logger.error(f"{context_prefix} - Apptainer command {i+1}/3 timed out after {timeout} seconds")
                 return IndividualEvalOut(-float(100+i))
 
         vpositions_csv_file = host_log_folder / "abe_positions_filtered.csv"
@@ -583,6 +637,26 @@ class EvolutionaryAlgorithm():
         score = swimmers_rescued / len(swimmer_pts)
 
         return IndividualEvalOut(score)
+
+    def setupTrialLogger(self):
+        """Set up trial-specific logging to trial.log file"""
+        # Remove any existing handlers
+        for handler in self.logger.handlers[:]:
+            self.logger.removeHandler(handler)
+        
+        # Create thread-safe file handler for trial.log
+        log_file = self.trial_folder / 'trial.log'
+        file_handler = ThreadSafeFileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        
+        # Create formatter
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        
+        # Add handler to logger
+        self.logger.addHandler(file_handler)
+        
+        self.logger.info(f"Starting trial {self.trial_id}")
 
     def setupTrialFitnessCsv(self):
         # Define filepath
@@ -660,6 +734,9 @@ class EvolutionaryAlgorithm():
         # Setup folder
         self.trial_folder = self.host_root_folder / ('trial_'+str(self.trial_id))
         self.trial_folder.mkdir(parents=True, exist_ok=True)
+
+        # Setup trial-specific logging
+        self.setupTrialLogger()
 
         # Check if we are loading a checkpoint or initializing from scratch
         if self.load_checkpoint and len(checkpoint_dirs := self.getCheckpointDirs()) > 0:
