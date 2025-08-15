@@ -61,6 +61,7 @@ vpositions.txt
 *_positions_filtered.csv
 apptainer_out.log
 checkpoint_*.pkl
+trial.log
 
 # MOOS log files
 *.alog
