@@ -1,0 +1,74 @@
+# Configuration file for Cooperative Coevolutionary Algorithm
+
+# Checkpoint settings
+load_checkpoint: true
+delete_previous_checkpoint: false
+
+# Multiprocessing settings
+use_multiprocessing: true
+num_processes: 20
+
+# Evolution settings
+num_trials: 1
+num_generations: 10
+config_seed: 0
+increment_seed_every_trial: false
+
+# Rescue and neural network settings
+rescue_observation_radius: 100
+neural_network_structure: [8, 10, 5, 2]
+neural_network_action_bounds: [[0.0, 1.0], [-180.0, 180.0]]
+
+# Population settings
+population_size: 50
+num_rollouts_per_team: 5
+
+# CCEA Selection settings
+n_team_elites: 3
+n_individual_elites: 3
+n_tourn_teams: 10
+tournament_size: 3
+
+# Mutation settings
+mut_indpb: 0.2
+mut_std: 1.0
+
+# Swimmer positions
+swimmer_spawner: random
+swimmer_spawner.random.num: 1
+swimmer_spawner.random.distribution: uniform
+swimmer_spawner.random.circle.radius: 30
+swimmer_spawner.random.circle.center:
+  x: 41
+  y: -38
+swimmer_spawner.fixed.pts:
+  - x: 12.0
+    y: -60.0
+swimmer_spawner.rotate.pts:
+  - - x: 12.0
+      y: -60.0
+  - - x: 22.0
+      y: -50.0
+
+# Vehicle positions - defines team size
+vehicle_spawner: fixed
+vehicle_spawner.fixed.vehicle_poses:
+  - x: 13.0
+    y: -20.0
+    heading: 181.0
+  - x: 15.0
+    y: -22.0
+    heading: 181.0
+  - x: 11.0
+    y: -18.0
+    heading: 181.0
+
+# MOOS settings
+moos_timewarp: 1
+max_db_uptime: 120
+trim_logs: true
+
+# Apptainer settings
+launch_timeout: 500
+process_nodes_timeout: 500
+filter_csv_timeout: 500
