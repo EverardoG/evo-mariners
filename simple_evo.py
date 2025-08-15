@@ -367,7 +367,14 @@ class EvolutionaryAlgorithm():
         self.mut_indpb = config.get('mut_indpb', 0.2)
         self.mut_std = config.get('mut_std', 1.0)
 
-        # Parse vehicle poses
+        # Parse vehicle spawning configuration
+        self.vehicle_spawner_type = config.get('vehicle_spawner', 'fixed')
+
+        if self.vehicle_spawner_type == 'fixed':
+            vehicle_config = config.get('vehicle_spawner.fixed.vehicle_poses', [{'x': 13.0, 'y': -20.0, 'heading': 181.0}])
+            self.fixed_vehicle_poses = [Pose(pose['x'], pose['y'], pose['heading']) for pose in vehicle_config]
+
+        # Parse vehicle poses (keep for backward compatibility)
         pose_config = config.get('default_vehicle_poses',
                                 [[{'x': 13.0, 'y': -20.0, 'heading': 181.0}],
                                  [{'x': 13.0, 'y': -20.0, 'heading': 181.0}]])
@@ -471,6 +478,25 @@ class EvolutionaryAlgorithm():
                 return self.default_swimmer_pts[rollout_id]
             else:
                 return [Point(12.0, -60.0)]  # Default fallback
+
+    def getVehiclePosesForRollout(self, rollout_id):
+        """
+        Get vehicle poses for a specific rollout based on the spawning type.
+
+        Args:
+            rollout_id: The rollout identifier
+
+        Returns:
+            List[Pose]: List of vehicle poses for this rollout
+        """
+        if self.vehicle_spawner_type == 'fixed':
+            return self.fixed_vehicle_poses
+        else:
+            # Fallback to old behavior for backward compatibility
+            if hasattr(self, 'default_vehicle_poses') and len(self.default_vehicle_poses) > rollout_id:
+                return self.default_vehicle_poses[rollout_id]
+            else:
+                return [Pose(13.0, -20.0, 181.0)]  # Default fallback
 
     def computeSwimmersRescued(self, vehicle_pts, swimmer_pts):
         """
@@ -588,8 +614,8 @@ class EvolutionaryAlgorithm():
         swimmer_pts = self.getSwimmerPtsForRollout(individual_eval_in.rollout_id, individual_eval_in.seed)
 
         writeSwimmersTxt(swimmer_pts, host_swimmers_txt_file)
-        # Use default vehicle poses for backward compatibility or add similar logic for vehicle poses if needed
-        vehicle_poses = self.default_vehicle_poses[individual_eval_in.rollout_id] if hasattr(self, 'default_vehicle_poses') and len(self.default_vehicle_poses) > individual_eval_in.rollout_id else [Pose(13.0, -20.0, 181.0)]
+        # Get vehicle poses for this rollout
+        vehicle_poses = self.getVehiclePosesForRollout(individual_eval_in.rollout_id)
         writeVpositionsTxt(vehicle_poses, host_vpositions_txt_file)
         self.writeNeuralNetworkCsv(individual_eval_in.individual, host_neural_net_csv_file)
 
