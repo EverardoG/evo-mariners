@@ -423,6 +423,7 @@ class EvolutionaryAlgorithm():
         return [self.trial_folder/dir for dir in os.listdir(self.trial_folder) if "checkpoint_" in dir]
 
     def loadCheckpoint(self, checkpoint_dirs):
+        self.setupTrialFitnessCsv(loading_checkpoint=True)
         checkpoint_dirs.sort(key=lambda x: int(str(x).split('_')[-1].split('.')[0]))
         with open(checkpoint_dirs[-1], 'rb') as f:
             population, individual_summaries = pickle.load(f)
@@ -595,7 +596,7 @@ class EvolutionaryAlgorithm():
 
         host_swimmers_txt_file = host_work_folder / 'swimmers.txt'
         host_vpositions_txt_file = host_work_folder / 'vpositions.txt'
-        host_neural_net_csv_file = host_work_folder / 'neural_network_abe.csv'
+        host_neural_net_csv_file = host_work_folder / 'neural_network_abe1.csv'
 
         app_work_folder = self.app_root_folder / self.trial_name / self.gen_folder / individual_folder / rollout_folder
         app_log_folder = app_work_folder / 'logs'
@@ -603,7 +604,7 @@ class EvolutionaryAlgorithm():
 
         app_swimmers_txt_file = app_work_folder / 'swimmers.txt'
         app_vpositions_txt_file = app_work_folder / 'vpositions.txt'
-        app_neural_net_csv_file = app_work_folder / 'neural_network_abe.csv'
+        app_neural_net_csv_file = app_work_folder / 'neural_network_abe1.csv'
 
         # Get swimmer points for this rollout
         swimmer_pts = self.getSwimmerPtsForRollout(rollout_pack.rollout_id, rollout_pack.seed)
@@ -735,20 +736,23 @@ class EvolutionaryAlgorithm():
 
         self.logger.info(f"Starting trial {self.trial_id}")
 
-    def setupTrialFitnessCsv(self):
+    def setupTrialFitnessCsv(self, loading_checkpoint=False):
         # Define filepath
         self.fitness_csv_file = self.trial_folder / 'fitness.csv'
 
-        # Define header columns
-        columns = ['generation']
-        for i in range(self.population_size):
-            columns.append('individual_'+str(i))
-            for j in range(self.num_rollouts_per_individual):
-                columns.append('individual_'+str(i)+'_rollout_'+str(j))
-        # Create empty dataframe
-        df = pd.DataFrame(columns=columns)
-        # Write only the header to the CSV
-        df.to_csv(self.fitness_csv_file, index=False)
+        if not loading_checkpoint:
+            # Define header columns
+            columns = ['generation']
+            for i in range(self.population_size):
+                columns.append('individual_'+str(i))
+                for j in range(self.num_rollouts_per_individual):
+                    columns.append('individual_'+str(i)+'_rollout_'+str(j))
+            # Create empty dataframe
+            df = pd.DataFrame(columns=columns)
+            # Write only the header to the CSV
+            output = df.to_csv(self.fitness_csv_file, index=False)
+            if output is not None:
+                raise ValueError(f"Unexpected output from df.to_csv: {output}. Expected None.")
 
     def updateTrialFitnessCsv(self, population):
         # Build out a dictionary of fitnesses
@@ -768,7 +772,9 @@ class EvolutionaryAlgorithm():
         df = pd.DataFrame([fit_dict])
 
         # Append the row to the CSV file
-        df.to_csv(self.fitness_csv_file, mode='a', header=False, index=False)
+        output = df.to_csv(self.fitness_csv_file, mode='a', header=False, index=False)
+        if output is not None:
+            raise ValueError(f"Unexpected output from df.to_csv: {output}. Expected None.")
 
     def evaluateIndividuals(self, rollout_packs):
         if self.use_multiprocessing:
