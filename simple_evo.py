@@ -592,17 +592,23 @@ class EvolutionaryAlgorithm():
         process_node_reports_cmd = (
             f"process_node_reports {app_log_folder}/XLOG_SHORESIDE/XLOG_SHORESIDE.alog {app_log_folder}/"
         )
+        # cut_last_lines is necessary in case the node report wasn't complete in the last line
+        cut_last_lines_cmd = (
+            f"sed -i '$d;$d' {app_log_folder}/abe_positions.csv"
+        )
         filter_node_reports_cmd = (
             f"csv_filter_duplicate_rows {app_log_folder}/abe_positions.csv {app_log_folder}/abe_positions_filtered.csv"
         )
         apptainer_cmds = [
             launch_cmd,
             process_node_reports_cmd,
+            cut_last_lines_cmd,
             filter_node_reports_cmd
         ]
         timeouts = [
             self.launch_timeout,
             self.process_nodes_timeout,
+            100 # cut_last_lines_timeout
             self.filter_csv_timeout
         ]
 
@@ -617,17 +623,17 @@ class EvolutionaryAlgorithm():
                 f"{exec_cmd}\"{cmd}\" >> {app_log_file} 2>&1"
             )
 
-            self.logger.info(f"{context_prefix} - Running apptainer command {i+1}/3: {cmd}")
+            self.logger.info(f"{context_prefix} - Running apptainer command {i+1}/4: {cmd}")
 
             try:
                 out = subprocess.call(app_exec_cmd, shell=True, timeout=timeout)
                 if out == 0:
-                    self.logger.info(f"{context_prefix} - Apptainer command {i+1}/3 completed successfully")
+                    self.logger.info(f"{context_prefix} - Apptainer command {i+1}/4 completed successfully")
                 else:
-                    self.logger.error(f"{context_prefix} - Apptainer command {i+1}/3 failed with exit code {out}")
+                    self.logger.error(f"{context_prefix} - Apptainer command {i+1}/4 failed with exit code {out}")
                     return IndividualEvalOut(-float(100+i))
             except subprocess.TimeoutExpired:
-                self.logger.error(f"{context_prefix} - Apptainer command {i+1}/3 timed out after {timeout} seconds")
+                self.logger.error(f"{context_prefix} - Apptainer command {i+1}/4 timed out after {timeout} seconds")
                 return IndividualEvalOut(-float(100+i))
 
         vpositions_csv_file = host_log_folder / "abe_positions_filtered.csv"
