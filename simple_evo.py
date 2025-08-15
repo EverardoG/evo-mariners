@@ -662,10 +662,10 @@ class EvolutionaryAlgorithm():
         )
         # cut_last_lines is necessary in case the node report wasn't complete in the last line
         cut_last_lines_cmd = (
-            f"sed -i '$d;$d' {app_log_folder}/abe_positions.csv"
+            f"sed -i '$d;$d' {app_log_folder}/abe1_positions.csv"
         )
         filter_node_reports_cmd = (
-            f"csv_filter_duplicate_rows {app_log_folder}/abe_positions.csv {app_log_folder}/abe_positions_filtered.csv"
+            f"csv_filter_duplicate_rows {app_log_folder}/abe1_positions.csv {app_log_folder}/abe1_positions_filtered.csv"
         )
         apptainer_cmds = [
             launch_cmd,
@@ -706,7 +706,7 @@ class EvolutionaryAlgorithm():
                 rollout_pack.fitness = -float(100+i)
                 return rollout_pack
 
-        vpositions_csv_file = host_log_folder / "abe_positions_filtered.csv"
+        vpositions_csv_file = host_log_folder / "abe1_positions_filtered.csv"
         vehicle_pts = readXyCsv(vpositions_csv_file)
 
         swimmers_rescued = self.computeSwimmersRescued(vehicle_pts, swimmer_pts)
