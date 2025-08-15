@@ -31,22 +31,17 @@ class Individual():
         self.rollout_fitnesses = []
         self.fitness = None
 
-class IndividualEvalIn():
+class RolloutPack():
     def __init__(self, individual, seed, rollout_id):
         self.individual = individual
         self.seed = seed
         self.rollout_id = rollout_id
         self.fitness = None
 
-class IndividualEvalOut():
-    def __init__(self, fitness):
-        self.fitness = fitness
-
-class IndividualSummary():
-    def __init__(self, individual, seeds, eval_outs):
+class EvalSummary():
+    def __init__(self, individual, rollout_packs):
         self.individual = individual
-        self.seeds = seeds
-        self.eval_outs = eval_outs
+        self.rollout_packs = rollout_packs
 
 def getSizeOfNet(structure: List[int]) -> int:
     total_size = 0
@@ -540,20 +535,20 @@ class EvolutionaryAlgorithm():
 
     def wrapIndividuals(self, population, eval_summaries):
         for individual, eval_summary in zip(population, eval_summaries):
-            individual.rollout_fitnesses = [eval_out.fitness for eval_out in eval_summary.eval_outs]
+            individual.rollout_fitnesses = [rollout_pack.fitness for rollout_pack in eval_summary.rollout_packs]
             individual.fitness = sum(individual.rollout_fitnesses) / len(individual.rollout_fitnesses)
 
-    def buildIndividualSummaries(self, eval_ins, eval_outs):
-        individual_summaries = []
-        for i in range(int(len(eval_outs)/self.rpi)):
-            individual_summaries.append(
-                IndividualSummary(
-                    individual=eval_ins[i*self.rpi].individual,
-                    seeds=[eval_in.seed for eval_in in eval_ins[i*self.rpi:(i+1)*self.rpi]],
-                    eval_outs=eval_outs[i*self.rpi:(i+1)*self.rpi]
+    def buildEvalSummaries(self, rollout_packs):
+        eval_summaries = []
+        for i in range(int(len(rollout_packs)/self.rpi)):
+            individual_rollout_packs = rollout_packs[i*self.rpi:(i+1)*self.rpi]
+            eval_summaries.append(
+                EvalSummary(
+                    individual=individual_rollout_packs[0].individual,
+                    rollout_packs=individual_rollout_packs
                 )
             )
-        return individual_summaries
+        return eval_summaries
 
     def mutateIndividual(self, individual):
         for i in range(len(individual.weights)):
@@ -577,7 +572,7 @@ class EvolutionaryAlgorithm():
 
         return offspring
 
-    def evaluateIndividual(self, individual_eval_in):
+    def evaluateIndividual(self, rollout_pack):
         # Set up logger for this process if it doesn't have handlers
         if not self.logger.handlers:
             log_file = self.trial_folder / 'trial.log'
@@ -589,10 +584,10 @@ class EvolutionaryAlgorithm():
 
         # Configure logger with process context
         process_id = os.getpid()
-        context_prefix = f"PID:{process_id} Gen:{self.gen} Ind:{individual_eval_in.individual.temp_id} Rollout:{individual_eval_in.rollout_id}"
+        context_prefix = f"PID:{process_id} Gen:{self.gen} Ind:{rollout_pack.individual.temp_id} Rollout:{rollout_pack.rollout_id}"
 
-        individual_folder = 'ind_'+str(individual_eval_in.individual.temp_id)
-        rollout_folder = 'rollout_'+str(individual_eval_in.rollout_id)
+        individual_folder = 'ind_'+str(rollout_pack.individual.temp_id)
+        rollout_folder = 'rollout_'+str(rollout_pack.rollout_id)
 
         host_work_folder = self.host_root_folder / self.trial_name / self.gen_folder / individual_folder / rollout_folder
         host_log_folder = host_work_folder / 'logs'
@@ -611,13 +606,13 @@ class EvolutionaryAlgorithm():
         app_neural_net_csv_file = app_work_folder / 'neural_network_abe.csv'
 
         # Get swimmer points for this rollout
-        swimmer_pts = self.getSwimmerPtsForRollout(individual_eval_in.rollout_id, individual_eval_in.seed)
+        swimmer_pts = self.getSwimmerPtsForRollout(rollout_pack.rollout_id, rollout_pack.seed)
 
         writeSwimmersTxt(swimmer_pts, host_swimmers_txt_file)
         # Get vehicle poses for this rollout
-        vehicle_poses = self.getVehiclePosesForRollout(individual_eval_in.rollout_id)
+        vehicle_poses = self.getVehiclePosesForRollout(rollout_pack.rollout_id)
         writeVpositionsTxt(vehicle_poses, host_vpositions_txt_file)
-        self.writeNeuralNetworkCsv(individual_eval_in.individual, host_neural_net_csv_file)
+        self.writeNeuralNetworkCsv(rollout_pack.individual, host_neural_net_csv_file)
 
         # Build launch arguments
         launch_args = [
@@ -704,10 +699,12 @@ class EvolutionaryAlgorithm():
                     self.logger.info(f"{context_prefix} - Apptainer command {i+1}/4 completed successfully")
                 else:
                     self.logger.error(f"{context_prefix} - Apptainer command {i+1}/4 failed with exit code {out}")
-                    return IndividualEvalOut(-float(100+i))
+                    rollout_pack.fitness = -float(100+i)
+                    return rollout_pack
             except subprocess.TimeoutExpired:
                 self.logger.error(f"{context_prefix} - Apptainer command {i+1}/4 timed out after {timeout} seconds")
-                return IndividualEvalOut(-float(100+i))
+                rollout_pack.fitness = -float(100+i)
+                return rollout_pack
 
         vpositions_csv_file = host_log_folder / "abe_positions_filtered.csv"
         vehicle_pts = readXyCsv(vpositions_csv_file)
@@ -715,7 +712,8 @@ class EvolutionaryAlgorithm():
         swimmers_rescued = self.computeSwimmersRescued(vehicle_pts, swimmer_pts)
         score = swimmers_rescued / len(swimmer_pts)
 
-        return IndividualEvalOut(score)
+        rollout_pack.fitness = score
+        return rollout_pack
 
     def setupTrialLogger(self):
         """Set up trial-specific logging to trial.log file"""
@@ -772,13 +770,13 @@ class EvolutionaryAlgorithm():
         # Append the row to the CSV file
         df.to_csv(self.fitness_csv_file, mode='a', header=False, index=False)
 
-    def evaluateIndividuals(self, individual_eval_ins):
+    def evaluateIndividuals(self, rollout_packs):
         if self.use_multiprocessing:
-            jobs = self.map(self.evaluateIndividual, individual_eval_ins)
-            individual_eval_outs = jobs.get()
+            jobs = self.map(self.evaluateIndividual, rollout_packs)
+            rollout_packs_with_fitness = jobs.get()
         else:
-            individual_eval_outs = list(self.map(self.evaluateIndividual, individual_eval_ins))
-        return individual_eval_outs
+            rollout_packs_with_fitness = list(self.map(self.evaluateIndividual, rollout_packs))
+        return rollout_packs_with_fitness
 
     def evaluatePopulation(self, population):
         # Give each individual a temporary id for evaluation
@@ -793,21 +791,21 @@ class EvolutionaryAlgorithm():
         self.host_gen_folder.mkdir(parents=True, exist_ok=True)
 
         # Set up the info we need for rollouts
-        individual_eval_ins = []
+        rollout_packs = []
         rollout_seeds = [self.getSeed() for _ in range(self.rpi)]
         for individual in population:
             for rollout_id, seed in enumerate(rollout_seeds):
-                individual_eval_ins.append(
-                    IndividualEvalIn(individual, seed, rollout_id)
+                rollout_packs.append(
+                    RolloutPack(individual, seed, rollout_id)
                 )
 
         # Let's evaluate individuals in our rollouts
-        individual_eval_outs = self.evaluateIndividuals(individual_eval_ins)
+        rollout_packs_with_fitness = self.evaluateIndividuals(rollout_packs)
 
         # Now wrap everything up nicely into summaries
-        individual_summaries = self.buildIndividualSummaries(individual_eval_ins, individual_eval_outs)
+        eval_summaries = self.buildEvalSummaries(rollout_packs_with_fitness)
 
-        return individual_summaries
+        return eval_summaries
 
     def runTrial(self):
         # Setup folder
@@ -819,7 +817,7 @@ class EvolutionaryAlgorithm():
 
         # Check if we are loading a checkpoint or initializing from scratch
         if self.load_checkpoint and len(checkpoint_dirs := self.getCheckpointDirs()) > 0:
-            population, individual_summaries, self.gen = self.loadCheckpoint(checkpoint_dirs)
+            population, eval_summaries, self.gen = self.loadCheckpoint(checkpoint_dirs)
         else:
             # Reset generation counter at start of each trial
             self.gen = 0
@@ -839,16 +837,16 @@ class EvolutionaryAlgorithm():
             population = self.population()
 
             # Evaluate each individual
-            individual_summaries = self.evaluatePopulation(population)
+            eval_summaries = self.evaluatePopulation(population)
 
             # Wrap summary information back into each individual
-            self.wrapIndividuals(population, individual_summaries)
+            self.wrapIndividuals(population, eval_summaries)
 
             # Update fitness.csv
             self.updateTrialFitnessCsv(population)
 
             # Save it
-            self.saveCheckpoint(population, individual_summaries)
+            self.saveCheckpoint(population, eval_summaries)
 
         # Iterate generations
         for _ in tqdm(range(self.num_generations-self.gen)):
@@ -864,22 +862,22 @@ class EvolutionaryAlgorithm():
                 random.seed(self.getSeed())
 
             # Perform selection and mutation
-            offspring = self.selectAndMutate(population, individual_summaries)
+            offspring = self.selectAndMutate(population, eval_summaries)
 
             # Now population the individuals with the offspring
             population[:] = offspring
 
             # Evaluate the new population
-            individual_summaries[:] = self.evaluatePopulation(population)
+            eval_summaries[:] = self.evaluatePopulation(population)
 
             # Wrap summary information back in
-            self.wrapIndividuals(population, individual_summaries)
+            self.wrapIndividuals(population, eval_summaries)
 
             # Update fitness.csv
             self.updateTrialFitnessCsv(population)
 
             # Save it
-            self.saveCheckpoint(population, individual_summaries)
+            self.saveCheckpoint(population, eval_summaries)
 
     def run(self):
         for trial_id in range(self.num_trials):
