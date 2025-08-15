@@ -199,6 +199,35 @@ def generateRandomPointsInPolygon(polygon, num_points, seed=None):
 
     return points
 
+def generateRandomPointsInCircle(center_x, center_y, radius, num_points, seed=None):
+    """
+    Generate random points within a circle using polar coordinates.
+
+    Args:
+        center_x: X coordinate of circle center
+        center_y: Y coordinate of circle center
+        radius: Maximum radius from center
+        num_points: Number of random points to generate
+        seed: Random seed for reproducibility
+
+    Returns:
+        List[shapely.geometry.Point]: List of random points within the circle
+    """
+    if seed is not None:
+        random.seed(seed)
+
+    points = []
+    for _ in range(num_points):
+        # Use sqrt to ensure uniform distribution in area
+        r = radius * math.sqrt(random.random())
+        theta = random.uniform(0, 2 * math.pi)
+
+        x = center_x + r * math.cos(theta)
+        y = center_y + r * math.sin(theta)
+        points.append(Point(x, y))
+
+    return points
+
 class ThreadSafeFileHandler(logging.FileHandler):
     """
     A file handler that uses file locking to ensure thread-safe writing
@@ -306,8 +335,16 @@ class EvolutionaryAlgorithm():
                 self.rotate_swimmer_pts.append(rollout_points)
         elif self.swimmer_spawner_type == 'random':
             self.num_random_swimmers = config.get('swimmer_spawner.random.num', 1)
-            polygon_str = config.get('swimmer_spawner.random.polygon', 'pts={60,10:-75.5402,-54.2561:-36.9866,-135.58:98.5536,-71.3241}')
-            self.swimmer_polygon = parsePolygonString(polygon_str)
+            self.random_distribution = config.get('swimmer_spawner.random.distribution', 'uniform')
+
+            if self.random_distribution == 'uniform':
+                polygon_str = config.get('swimmer_spawner.random.polygon', 'pts={60,10:-75.5402,-54.2561:-36.9866,-135.58:98.5536,-71.3241}')
+                self.swimmer_polygon = parsePolygonString(polygon_str)
+            elif self.random_distribution == 'circle':
+                self.circle_radius = config.get('swimmer_spawner.random.circle.radius', 30)
+                circle_center = config.get('swimmer_spawner.random.circle.center', {'x': 0, 'y': 0})
+                self.circle_center_x = circle_center['x']
+                self.circle_center_y = circle_center['y']
 
         # Remove old default_swimmer_pts loading if swimmer_spawner is defined
         if 'swimmer_spawner' not in config:
@@ -416,8 +453,18 @@ class EvolutionaryAlgorithm():
             config_index = rollout_id % len(self.rotate_swimmer_pts)
             return self.rotate_swimmer_pts[config_index]
         elif self.swimmer_spawner_type == 'random':
-            # Generate random points using the seed
-            return generateRandomPointsInPolygon(self.swimmer_polygon, self.num_random_swimmers, seed)
+            if self.random_distribution == 'uniform':
+                # Generate random points using the polygon
+                return generateRandomPointsInPolygon(self.swimmer_polygon, self.num_random_swimmers, seed)
+            elif self.random_distribution == 'circle':
+                # Generate random points using the circle
+                return generateRandomPointsInCircle(
+                    self.circle_center_x,
+                    self.circle_center_y,
+                    self.circle_radius,
+                    self.num_random_swimmers,
+                    seed
+                )
         else:
             # Fallback to old behavior
             if hasattr(self, 'default_swimmer_pts') and len(self.default_swimmer_pts) > rollout_id:
@@ -608,7 +655,7 @@ class EvolutionaryAlgorithm():
         timeouts = [
             self.launch_timeout,
             self.process_nodes_timeout,
-            100 # cut_last_lines_timeout
+            100, # cut_last_lines_timeout
             self.filter_csv_timeout
         ]
 
