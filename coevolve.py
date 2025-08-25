@@ -840,8 +840,8 @@ class CooperativeCoevolutionaryAlgorithm():
         # Define header columns
         columns = ['generation']
         for i in range(self.population_size):
+            columns.append(f'team_{i}_team_fitness')
             for agent_id in range(self.num_agents_per_team):
-                columns.append(f'team_{i}_agent_{agent_id}_team_fitness')
                 columns.append(f'team_{i}_agent_{agent_id}_shaped_fitness')
             for j in range(self.num_rollouts_per_team):
                 columns.append(f'team_{i}_rollout_{j}_team_fitness')
@@ -859,8 +859,8 @@ class CooperativeCoevolutionaryAlgorithm():
 
         for i, team_summary in enumerate(team_summaries):
             # Write aggregated fitnesses for each team member
+            fit_dict[f'team_{i}_team_fitness'] = team_summary.team[0].team_fitness
             for agent_id, individual in enumerate(team_summary.team):
-                fit_dict[f'team_{i}_agent_{agent_id}_team_fitness'] = individual.team_fitness
                 fit_dict[f'team_{i}_agent_{agent_id}_shaped_fitness'] = individual.shaped_fitness
 
             # Write fitness from each rollout
@@ -879,9 +879,12 @@ class CooperativeCoevolutionaryAlgorithm():
         if self.use_multiprocessing:
             jobs = self.map(self.evaluateTeam, rollout_packs)
             rollout_packs_with_fitness = jobs.get()
+            for rollout_pack, rollout_pack_with_fitness in zip(rollout_packs, rollout_packs_with_fitness):
+                rollout_pack.team_fitness = rollout_pack_with_fitness.team_fitness
+                rollout_pack.shaped_fitnesses = rollout_pack_with_fitness.shaped_fitnesses
         else:
-            rollout_packs_with_fitness = list(self.map(self.evaluateTeam, rollout_packs))
-        return rollout_packs_with_fitness
+            rollout_packs = list(self.map(self.evaluateTeam, rollout_packs))
+        return rollout_packs
 
     def evaluatePopulations(self, populations):
         """Evaluate multiple populations by forming teams"""
