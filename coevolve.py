@@ -726,7 +726,8 @@ class CooperativeCoevolutionaryAlgorithm():
             f"--swim_file={app_swimmers_txt_file}",
             f"--vpositions={app_work_folder}/vpositions.txt",
             "--nostamp",
-            f"--rescue_observation_radius={self.rescue_observation_radius}"
+            f"--rescue_observation_radius={self.rescue_observation_radius}",
+            f"--r{len(vehicle_poses)}"
         ]
 
         # Conditionally add --trim flag
@@ -756,24 +757,25 @@ class CooperativeCoevolutionaryAlgorithm():
         process_node_reports_cmd = (
             f"process_node_reports {app_log_folder}/XLOG_SHORESIDE/XLOG_SHORESIDE.alog {app_log_folder}/"
         )
-        cut_last_lines_cmd = (
-            f"sed -i '$d;$d' {app_log_folder}/abe1_positions.csv"
-        )
-        filter_node_reports_cmd = (
-            f"csv_filter_duplicate_rows {app_log_folder}/abe1_positions.csv {app_log_folder}/abe1_positions_filtered.csv"
-        )
         apptainer_cmds = [
             launch_cmd,
-            process_node_reports_cmd,
-            cut_last_lines_cmd,
-            filter_node_reports_cmd
+            process_node_reports_cmd
         ]
         timeouts = [
             self.launch_timeout,
-            self.process_nodes_timeout,
-            100,  # cut_last_lines_timeout
-            self.filter_csv_timeout
+            self.process_nodes_timeout
         ]
+        for i in range(len(vehicle_poses)):
+            cut_last_lines_cmd = (
+                f"sed -i '$d;$d' {app_log_folder}/abe{i+1}_positions.csv"
+            )
+            filter_node_reports_cmd = (
+                f"csv_filter_duplicate_rows {app_log_folder}/abe{i+1}_positions.csv {app_log_folder}/abe{i+1}_positions_filtered.csv"
+            )
+            apptainer_cmds.append(cut_last_lines_cmd)
+            # apptainer_cmds.append(filter_node_reports_cmd)
+            timeouts.append(100) # cut_last_lines_timeout
+            # timeouts.append(self.filter_csv_timeout)
 
         app_log_file = Path(host_log_folder) / "apptainer_out.log"
         app_log_file.write_text('')
@@ -784,19 +786,19 @@ class CooperativeCoevolutionaryAlgorithm():
                 f"{exec_cmd}\"{cmd}\" >> {app_log_file} 2>&1"
             )
 
-            self.logger.info(f"{context_prefix} - Running apptainer command {i+1}/4: {cmd}")
+            self.logger.info(f"{context_prefix} - Running apptainer command {i+1}/{len(apptainer_cmds)}: {cmd}")
 
             try:
                 out = subprocess.call(app_exec_cmd, shell=True, timeout=timeout)
                 if out == 0:
-                    self.logger.info(f"{context_prefix} - Apptainer command {i+1}/4 completed successfully")
+                    self.logger.info(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} completed successfully")
                 else:
-                    self.logger.error(f"{context_prefix} - Apptainer command {i+1}/4 failed with exit code {out}")
+                    self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} failed with exit code {out}")
                     rollout_pack.team_fitness = -float(100+i)
                     rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.individuals)
                     return rollout_pack
             except subprocess.TimeoutExpired:
-                self.logger.error(f"{context_prefix} - Apptainer command {i+1}/4 timed out after {timeout} seconds")
+                self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} timed out after {timeout} seconds")
                 rollout_pack.team_fitness = -float(100+i)
                 rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.individuals)
                 return rollout_pack
