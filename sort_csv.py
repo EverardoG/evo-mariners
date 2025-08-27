@@ -34,9 +34,16 @@ def main():
         # Read the CSV file
         df = pd.read_csv(args.input_file)
 
-        # Find team fitness columns
-        team_fitness_pattern = r'team_\d+_team_fitness'
-        team_fitness_cols = [col for col in df.columns if re.match(team_fitness_pattern, col)]
+        # Find team fitness columns and extract team IDs
+        team_fitness_pattern = r'team_(\d+)_team_fitness'
+        team_fitness_cols = []
+        team_ids = []
+
+        for col in df.columns:
+            match = re.match(team_fitness_pattern, col)
+            if match:
+                team_fitness_cols.append(col)
+                team_ids.append(int(match.group(1)))
 
         if not team_fitness_cols:
             print("Error: No team_<digits>_team_fitness columns found in the input file", file=sys.stderr)
@@ -70,12 +77,18 @@ def main():
             # Sort indices by fitness (descending order)
             sorted_indices = sorted(range(len(fitness_values)), key=lambda x: fitness_values[x], reverse=True)
 
-            # Assign sorted values to new columns
+            # Assign sorted IDs and values to new columns (ID first, then fitness)
             for rank, orig_index in enumerate(sorted_indices):
-                col_name = f'sorted_team_{rank}'
-                if col_name not in result_df.columns:
-                    result_df[col_name] = 0.0
-                result_df.at[i, col_name] = fitness_values[orig_index]
+                id_col_name = f'sorted_team_{rank}_id'
+                fitness_col_name = f'sorted_team_{rank}'
+
+                if id_col_name not in result_df.columns:
+                    result_df[id_col_name] = 0
+                if fitness_col_name not in result_df.columns:
+                    result_df[fitness_col_name] = 0.0
+
+                result_df.at[i, id_col_name] = team_ids[orig_index]
+                result_df.at[i, fitness_col_name] = fitness_values[orig_index]
 
         # Write output file
         result_df.to_csv(args.output, index=False)
