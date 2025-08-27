@@ -769,13 +769,20 @@ class CooperativeCoevolutionaryAlgorithm():
             cut_last_lines_cmd = (
                 f"sed -i '$d;$d' {app_log_folder}/abe{i+1}_positions.csv"
             )
-            filter_node_reports_cmd = (
-                f"csv_filter_duplicate_rows {app_log_folder}/abe{i+1}_positions.csv {app_log_folder}/abe{i+1}_positions_filtered.csv"
-            )
             apptainer_cmds.append(cut_last_lines_cmd)
-            # apptainer_cmds.append(filter_node_reports_cmd)
             timeouts.append(100) # cut_last_lines_timeout
-            # timeouts.append(self.filter_csv_timeout)
+
+        csv_merge_files_cmd = (
+            f"csv_merge_files {app_log_folder}/"
+        )
+        apptainer_cmds.append(csv_merge_files_cmd)
+        timeouts.append(500)
+
+        filter_node_reports_cmd = (
+            f"csv_filter_duplicate_rows {app_log_folder}/team_positions.csv {app_log_folder}/team_positions_filtered.csv"
+        )
+        apptainer_cmds.append(filter_node_reports_cmd)
+        timeouts.append(self.filter_csv_timeout)
 
         app_log_file = Path(host_log_folder) / "apptainer_out.log"
         app_log_file.write_text('')
@@ -803,7 +810,7 @@ class CooperativeCoevolutionaryAlgorithm():
                 rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.individuals)
                 return rollout_pack
 
-        vpositions_csv_file = host_log_folder / "abe1_positions_filtered.csv"
+        vpositions_csv_file = host_log_folder / "team_positions_filtered.csv"
         vehicle_pts = readXyCsv(vpositions_csv_file)
 
         swimmers_rescued = self.computeSwimmersRescued(vehicle_pts, swimmer_pts)
@@ -839,21 +846,22 @@ class CooperativeCoevolutionaryAlgorithm():
         # Define filepath
         self.fitness_csv_file = self.trial_folder / 'fitness.csv'
 
-        # Define header columns
-        columns = ['generation']
-        for i in range(self.population_size):
-            columns.append(f'team_{i}_team_fitness')
-            for agent_id in range(self.num_agents_per_team):
-                columns.append(f'team_{i}_agent_{agent_id}_shaped_fitness')
-            for j in range(self.num_rollouts_per_team):
-                columns.append(f'team_{i}_rollout_{j}_team_fitness')
+        if not self.fitness_csv_file.exists():
+            # Define header columns
+            columns = ['generation']
+            for i in range(self.population_size):
+                columns.append(f'team_{i}_team_fitness')
                 for agent_id in range(self.num_agents_per_team):
-                    columns.append(f'team_{i}_rollout_{j}_agent_{agent_id}_shaped_fitness')
+                    columns.append(f'team_{i}_agent_{agent_id}_shaped_fitness')
+                for j in range(self.num_rollouts_per_team):
+                    columns.append(f'team_{i}_rollout_{j}_team_fitness')
+                    for agent_id in range(self.num_agents_per_team):
+                        columns.append(f'team_{i}_rollout_{j}_agent_{agent_id}_shaped_fitness')
 
-        # Create empty dataframe
-        df = pd.DataFrame(columns=columns)
-        # Write only the header to the CSV
-        df.to_csv(self.fitness_csv_file, index=False)
+            # Create empty dataframe
+            df = pd.DataFrame(columns=columns)
+            # Write only the header to the CSV
+            df.to_csv(self.fitness_csv_file, index=False)
 
     def updateTrialFitnessCsv(self, team_summaries):
         # Build out a dictionary of fitnesses
@@ -931,6 +939,9 @@ class CooperativeCoevolutionaryAlgorithm():
         # Setup trial-specific logging
         self.setupTrialLogger()
 
+        # Set up the fitness csv
+        self.setupTrialFitnessCsv()
+
         # Check if we are loading a checkpoint or initializing from scratch
         if self.load_checkpoint and len(checkpoint_dirs := self.getCheckpointDirs()) > 0:
             populations, team_summaries, self.gen = self.loadCheckpoint(checkpoint_dirs)
@@ -945,9 +956,6 @@ class CooperativeCoevolutionaryAlgorithm():
                 if self.increment_seed_every_trial:
                     self.random_seed_val += self.trial_id
                 random.seed(self.getSeed())
-
-            # We need a top level fitness file fitness.csv for the trial
-            self.setupTrialFitnessCsv()
 
             # Initialize the populations
             populations = self.populations()
