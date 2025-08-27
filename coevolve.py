@@ -33,15 +33,20 @@ class Individual():
         self.team_fitness = None
         self.shaped_fitness = None
 
-class RolloutPack():
-    def __init__(self, individuals, seed, rollout_id):
+class Team():
+    def __init__(self, individuals, team_id):
         self.individuals = individuals
+        self.team_id = team_id
+
+class RolloutPack():
+    def __init__(self, team, seed, rollout_id):
+        self.team = team
         self.seed = seed
         self.rollout_id = rollout_id
         self.team_fitness = None
         self.shaped_fitnesses = None
 
-class EvalSummary():
+class TeamSummary():
     def __init__(self, team, rollout_packs):
         self.team = team
         self.rollout_packs = rollout_packs
@@ -539,17 +544,17 @@ class CooperativeCoevolutionaryAlgorithm():
             return []
 
         # Standard case: Form a team and keep going
-        team = []
+        individuals = []
         reduced_populations = []
         for pop in populations:
             # Pick a random individual from this population
             index = random.randint(0, len(pop) - 1)
-            team.append(pop[index])
+            individuals.append(pop[index])
             # Create reduced population without the selected individual
             reduced_populations.append(pop[:index] + pop[index+1:])
 
         # Recursively form more teams with the reduced populations
-        return [team] + self.formTeams(reduced_populations)
+        return [Team(individuals, len(populations[0]))] + self.formTeams(reduced_populations)
 
     def wrapIndividuals(self, populations, team_summaries):
         """Aggregate team and shaped fitnesses for all individuals across all populations"""
@@ -566,7 +571,7 @@ class CooperativeCoevolutionaryAlgorithm():
                 shaped_fitnesses = rollout_pack.shaped_fitnesses
 
                 # Add fitnesses to each individual in the team
-                for i, individual in enumerate(rollout_pack.individuals):
+                for i, individual in enumerate(rollout_pack.team.individuals):
                     individual.rollout_team_fitnesses.append(team_fitness)
                     individual.rollout_shaped_fitnesses.append(shaped_fitnesses[i])
 
@@ -586,8 +591,8 @@ class CooperativeCoevolutionaryAlgorithm():
         for i in range(int(len(rollout_packs) / self.rpt)):
             team_rollout_packs = rollout_packs[i * self.rpt:(i+1) * self.rpt]
             eval_summaries.append(
-                EvalSummary(
-                    team=team_rollout_packs[0].individuals,
+                TeamSummary(
+                    team=team_rollout_packs[0].team,
                     rollout_packs=team_rollout_packs
                 )
             )
@@ -600,6 +605,13 @@ class CooperativeCoevolutionaryAlgorithm():
 
     def selectAndMutate(self, populations, team_summaries):
         """Perform selection and mutation across multiple populations"""
+        # Temporary logging stuff
+        self.logger.info(f'Gen {self.gen}: Starting selection and mutation process')
+        for team_summary in team_summaries:
+            # Log the team id, log the individual id, log the team fitness, log the individual fitness
+            self.logger.info(f'team_id: {team_summary.team.team_id}| ind_ids: {[individual.temp_id for individual in team_summary.team.individuals]}')
+            self.logger.info(f'team_id: {team_summary.team.team_id} | ind_team_fits: {[individual.team_fitness for individual in team_summary.team.individuals]}')
+            self.logger.info(f'team_id: {team_summary.team.team_id} | ind_shaped_fits: {[individual.shaped_fitness for individual in team_summary.team.individuals]}')
         # Create offspring populations
         offspring_populations = [[] for _ in range(self.num_agents_per_team)]
 
@@ -612,25 +624,40 @@ class CooperativeCoevolutionaryAlgorithm():
         # Sort teams by fitness
         all_team_fitnesses.sort(key=lambda x: x[0], reverse=True)
 
+        self.logger.info(f'Teams organized by team fitnesses')
+        fits = [tup[0] for tup in all_team_fitnesses]
+        tsums = [tup[1] for tup in all_team_fitnesses]
+        self.logger.info(f'team ids: {[tsum.team.team_id for tsum in tsums]}')
+        self.logger.info(f'team fits: {[f for f in fits]}')
+
         # Add team elites
         for i in range(min(self.n_team_elites, len(all_team_fitnesses))):
             team_summary = all_team_fitnesses[i][1]
-            for agent_id, individual in enumerate(team_summary.team):
+            for agent_id, individual in enumerate(team_summary.team.individuals):
                 new_individual = deepcopy(individual)
                 new_individual.rollout_team_fitnesses = []
                 new_individual.rollout_shaped_fitnesses = []
                 offspring_populations[agent_id].append(new_individual)
 
+        # Log the offspring after adding in the the team elites
+        self.logger.info('Offspring after adding team elites')
+        for offpop in offspring_populations:
+            self.logger.info(f'team elites: {[ind.temp_id for ind in offpop]}')
+
+        self.logger.info('Adding individual elites to each population')
         # Add individual elites from each population
         for agent_id, population in enumerate(populations):
             # Sort by shaped fitness
             sorted_pop = sorted(population, key=lambda ind: ind.shaped_fitness if ind.shaped_fitness is not None else 0, reverse=True)
+            self.logger.info(f'Agent {agent_id} sorted by shaped_fitness: {[ind.temp_id for ind in sorted_pop]}')
             for i in range(min(self.n_individual_elites, len(sorted_pop))):
                 new_individual = deepcopy(sorted_pop[i])
                 new_individual.rollout_team_fitnesses = []
                 new_individual.rollout_shaped_fitnesses = []
                 offspring_populations[agent_id].append(new_individual)
+            self.logger.info(f'Agent {agent_id} offspring after adding ind elites: {[ind.temp_id for ind in offspring_populations[agent_id]]}')
 
+        self.logger.info('Adding individuals from tournament selection on teams')
         # Add individuals from tournament selection on teams
         for _ in range(self.n_tourn_teams):
             # Select two random teams and pick the better one
@@ -648,6 +675,10 @@ class CooperativeCoevolutionaryAlgorithm():
                     new_individual.rollout_shaped_fitnesses = []
                     offspring_populations[agent_id].append(new_individual)
 
+        for agent_id, population in enumerate(populations):
+            self.logger.info(f'Agent {agent_id} offspring after adding tournament selected teams: {[ind.temp_id for ind in offspring_populations[agent_id]]}')
+
+        self.logger.info('Adding individuals based on tournament selection on shaped fitness')
         # Fill remaining spots with tournament selection on shaped fitness
         for agent_id, population in enumerate(populations):
             current_size = len(offspring_populations[agent_id])
@@ -664,6 +695,9 @@ class CooperativeCoevolutionaryAlgorithm():
                 new_individual.rollout_shaped_fitnesses = []
                 offspring_populations[agent_id].append(new_individual)
 
+        for agent_id, population in enumerate(populations):
+            self.logger.info(f'Agent {agent_id} offspring after adding tournament selected individuals: {[ind.temp_id for ind in offspring_populations[agent_id]]}')
+
         return offspring_populations
 
     def evaluateTeam(self, rollout_pack):
@@ -679,10 +713,10 @@ class CooperativeCoevolutionaryAlgorithm():
 
         # Configure logger with process context
         process_id = os.getpid()
-        team_ids = [ind.temp_id for ind in rollout_pack.individuals]
+        team_ids = [ind.temp_id for ind in rollout_pack.team.individuals]
         context_prefix = f"PID:{process_id} Gen:{self.gen} Team:{team_ids} Rollout:{rollout_pack.rollout_id}"
 
-        team_folder = 'team_' + '_'.join(str(ind.temp_id) for ind in rollout_pack.individuals)
+        team_folder = 'team_' + str(rollout_pack.team.team_id) + '_inds_' + '_'.join(str(ind.temp_id) for ind in rollout_pack.team.individuals)
         rollout_folder = 'rollout_' + str(rollout_pack.rollout_id)
 
         host_work_folder = self.host_root_folder / self.trial_name / self.gen_folder / team_folder / rollout_folder
@@ -708,7 +742,7 @@ class CooperativeCoevolutionaryAlgorithm():
         writeVpositionsTxt(vehicle_poses, host_vpositions_txt_file)
 
         # Write neural network files for each team member
-        for i, individual in enumerate(rollout_pack.individuals):
+        for i, individual in enumerate(rollout_pack.team.individuals):
             host_neural_net_csv_file = host_work_folder / f'neural_network_abe{i+1}.csv'
             self.writeNeuralNetworkCsv(individual, host_neural_net_csv_file)
 
@@ -802,12 +836,12 @@ class CooperativeCoevolutionaryAlgorithm():
                 else:
                     self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} failed with exit code {out}")
                     rollout_pack.team_fitness = -float(100+i)
-                    rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.individuals)
+                    rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.team.individuals)
                     return rollout_pack
             except subprocess.TimeoutExpired:
                 self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} timed out after {timeout} seconds")
                 rollout_pack.team_fitness = -float(100+i)
-                rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.individuals)
+                rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.team.individuals)
                 return rollout_pack
 
         vpositions_csv_file = host_log_folder / "team_positions_filtered.csv"
@@ -818,7 +852,7 @@ class CooperativeCoevolutionaryAlgorithm():
 
         rollout_pack.team_fitness = team_score
         # For now, copy team fitness to all shaped fitnesses as placeholder
-        rollout_pack.shaped_fitnesses = [team_score] * len(rollout_pack.individuals)
+        rollout_pack.shaped_fitnesses = [team_score] * len(rollout_pack.team.individuals)
 
         return rollout_pack
 
@@ -869,8 +903,8 @@ class CooperativeCoevolutionaryAlgorithm():
 
         for i, team_summary in enumerate(team_summaries):
             # Write aggregated fitnesses for each team member
-            fit_dict[f'team_{i}_team_fitness'] = team_summary.team[0].team_fitness
-            for agent_id, individual in enumerate(team_summary.team):
+            fit_dict[f'team_{i}_team_fitness'] = team_summary.team.individuals[0].team_fitness
+            for agent_id, individual in enumerate(team_summary.team.individuals):
                 fit_dict[f'team_{i}_agent_{agent_id}_shaped_fitness'] = individual.shaped_fitness
 
             # Write fitness from each rollout
