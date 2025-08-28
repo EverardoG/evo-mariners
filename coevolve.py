@@ -306,9 +306,16 @@ class CooperativeCoevolutionaryAlgorithm():
         self.increment_seed_every_trial = config.get('increment_seed_every_trial', True)
 
         # Rescue and neural network settings
+        self.num_swimmer_sectors = config.get('num_swimmer_sectors', 8)
+        self.sense_vehicles = config.get('sense_vehicles', False)
+        self.num_vehicle_sectors = config.get('num_vehicle_sectors', 8)
         self.rescue_observation_radius = config.get('rescue_observation_radius', 100)
-        self.neural_network_structure = config.get('neural_network_structure', [8, 10, 5, 2])
         self.neural_network_action_bounds = config.get('neural_network_action_bounds', [[0.0, 1.0], [-180.0, 180.0]])
+        self.neural_network_structure = config.get('neural_network_structure', ['auto', 10, 5, 2])
+        if self.neural_network_structure[0] == 'auto':
+            self.neural_network_structure[0] = self.num_swimmer_sectors
+            if self.sense_vehicles:
+                self.neural_network_structure[0] += self.num_vehicle_sectors
 
         # Population settings
         self.population_size = config.get('population_size', 50)
@@ -554,7 +561,7 @@ class CooperativeCoevolutionaryAlgorithm():
             reduced_populations.append(pop[:index] + pop[index+1:])
 
         # Recursively form more teams with the reduced populations
-        return [Team(individuals, len(populations[0]))] + self.formTeams(reduced_populations)
+        return [Team(individuals, self.population_size - len(populations[0]))] + self.formTeams(reduced_populations)
 
     def wrapIndividuals(self, populations, team_summaries):
         """Aggregate team and shaped fitnesses for all individuals across all populations"""
@@ -761,8 +768,12 @@ class CooperativeCoevolutionaryAlgorithm():
             f"--vpositions={app_work_folder}/vpositions.txt",
             "--nostamp",
             f"--rescue_observation_radius={self.rescue_observation_radius}",
-            f"--r{len(vehicle_poses)}"
+            f"--r{len(vehicle_poses)}",
+            f"--r_swimmer_sectors={self.num_swimmer_sectors}"
         ]
+        if self.sense_vehicles:
+            launch_args.append(f"--r_sense_vehicles")
+            launch_args.append(f"--r_vehicle_sectors={self.num_vehicle_sectors}")
 
         # Conditionally add --trim flag
         if self.trim_logs:
