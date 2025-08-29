@@ -12,6 +12,8 @@ import pickle
 import logging
 import fcntl
 import time
+import psutil
+import gc
 
 from tqdm import tqdm
 import pandas as pd
@@ -284,6 +286,10 @@ class CooperativeCoevolutionaryAlgorithm():
         self.logger = logging.getLogger('CooperativeCoevolutionaryAlgorithm')
         self.logger.setLevel(logging.INFO)
 
+        # Initialize memory logger
+        self.memory_logger = logging.getLogger('MemoryMonitor')
+        self.memory_logger.setLevel(logging.INFO)
+
         self.setupMapping()
 
     def load_config(self):
@@ -414,7 +420,31 @@ class CooperativeCoevolutionaryAlgorithm():
     def __setstate__(self, state):
         self.__dict__.update(state)
 
+    def get_memory_mb(self):
+        """Get current memory usage in MB"""
+        try:
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            return memory_info.rss / (1024 * 1024)
+        except:
+            return 0.0
+
+    def log_memory(self, context):
+        """Log current memory usage with context"""
+        try:
+            if hasattr(self, 'memory_logger') and self.memory_logger.handlers:
+                memory_mb = self.get_memory_mb()
+                process_id = os.getpid()
+                if hasattr(self, 'gen') and self.gen is not None:
+                    self.memory_logger.info(f"MEMORY_PARENT: Gen:{self.gen} PID:{process_id} {context} | RSS:{memory_mb:.2f} MB")
+                else:
+                    self.memory_logger.info(f"MEMORY_PARENT: PID:{process_id} {context} | RSS:{memory_mb:.2f} MB")
+        except Exception as e:
+            # Silently fail if memory logging encounters issues
+            pass
+
     def saveCheckpoint(self, population, individual_summaries):
+        self.log_memory("Before saveCheckpoint")
         checkpoint_dir = self.trial_folder/('checkpoint_'+str(self.gen)+'.pkl')
         with open(checkpoint_dir, 'wb') as f:
             pickle.dump((population, individual_summaries), f)
@@ -424,15 +454,18 @@ class CooperativeCoevolutionaryAlgorithm():
                 lower_gen = min( [int(dir.split("_")[-1].split('.')[0]) for dir in checkpoint_dirs] )
                 prev_checkpoint_dir = self.trial_folder/('checkpoint_'+str(lower_gen)+'.pkl')
                 os.remove(prev_checkpoint_dir)
+        self.log_memory("After saveCheckpoint")
 
     def getCheckpointDirs(self):
         return [self.trial_folder/dir for dir in os.listdir(self.trial_folder) if "checkpoint_" in dir]
 
     def loadCheckpoint(self, checkpoint_dirs):
+        self.log_memory("Before loadCheckpoint")
         checkpoint_dirs.sort(key=lambda x: int(str(x).split('_')[-1].split('.')[0]))
         with open(checkpoint_dirs[-1], 'rb') as f:
             population, individual_summaries = pickle.load(f)
         gen = int(str(checkpoint_dirs[-1]).split('_')[-1].split('.')[0])
+        self.log_memory("After loadCheckpoint")
         return population, individual_summaries, gen
 
     def writeNeuralNetworkCsv(self, individual, filepath):
@@ -516,11 +549,14 @@ class CooperativeCoevolutionaryAlgorithm():
         return total_swimmers
 
     def setupMapping(self):
+        self.log_memory("Before setupMapping")
         if self.use_multiprocessing:
             self.pool = multiprocessing.Pool(processes=self.num_processes)
             self.map = self.pool.map_async
+            self.log_memory("After multiprocessing pool creation")
         else:
             self.map = map
+            self.log_memory("After setting up sequential mapping")
 
     def resetSeed(self):
         self.random_seed_val= self.config_seed
@@ -612,6 +648,7 @@ class CooperativeCoevolutionaryAlgorithm():
 
     def selectAndMutate(self, populations, team_summaries):
         """Perform selection and mutation across multiple populations"""
+        self.log_memory("Before selectAndMutate")
         # Temporary logging stuff
         self.logger.info(f'Gen {self.gen}: Starting selection and mutation process')
         for team_summary in team_summaries:
@@ -705,10 +742,27 @@ class CooperativeCoevolutionaryAlgorithm():
         for agent_id, population in enumerate(populations):
             self.logger.info(f'Agent {agent_id} offspring after adding tournament selected individuals: {[ind.temp_id for ind in offspring_populations[agent_id]]}')
 
+        self.log_memory("After selectAndMutate")
         return offspring_populations
 
     def evaluateTeam(self, rollout_pack):
         """Evaluate a team of individuals"""
+        # Set up memory logger for this process if it doesn't have handlers
+        if not hasattr(self, 'memory_logger') or not self.memory_logger.handlers:
+            memory_log_file = self.trial_folder / 'memory.log'
+            memory_handler = ThreadSafeFileHandler(memory_log_file)
+            memory_handler.setLevel(logging.INFO)
+            memory_formatter = logging.Formatter('%(asctime)s - %(message)s')
+            memory_handler.setFormatter(memory_formatter)
+            self.memory_logger = logging.getLogger('MemoryMonitor')
+            self.memory_logger.addHandler(memory_handler)
+
+        # Log memory at start of worker evaluation
+        memory_start = self.get_memory_mb()
+        process_id = os.getpid()
+        team_ids = [ind.temp_id for ind in rollout_pack.team.individuals]
+        self.memory_logger.info(f"MEMORY_WORKER: Gen:{self.gen} PID:{process_id} Team:{team_ids} Rollout:{rollout_pack.rollout_id} Start | RSS:{memory_start:.2f} MB")
+
         # Set up logger for this process if it doesn't have handlers
         if not self.logger.handlers:
             log_file = self.trial_folder / 'trial.log'
@@ -832,8 +886,15 @@ class CooperativeCoevolutionaryAlgorithm():
         app_log_file = Path(host_log_folder) / "apptainer_out.log"
         app_log_file.write_text('')
 
+        # After all the file writing operations and before the apptainer commands
+        memory_after_io = self.get_memory_mb()
+        memory_delta = memory_after_io - memory_start
+        self.memory_logger.info(f"MEMORY_WORKER: Gen:{self.gen} PID:{process_id} Team:{team_ids} Rollout:{rollout_pack.rollout_id} AfterIO | RSS:{memory_after_io:.2f} MB (+{memory_delta:.2f})")
+
         # Run apptainer commands
         for i, (cmd, timeout) in enumerate(zip(apptainer_cmds, timeouts)):
+            memory_before_cmd = self.get_memory_mb()
+
             app_exec_cmd = (
                 f"{exec_cmd}\"{cmd}\" >> {app_log_file} 2>&1"
             )
@@ -841,19 +902,54 @@ class CooperativeCoevolutionaryAlgorithm():
             self.logger.info(f"{context_prefix} - Running apptainer command {i+1}/{len(apptainer_cmds)}: {cmd}")
 
             try:
-                out = subprocess.call(app_exec_cmd, shell=True, timeout=timeout)
+                proc = subprocess.Popen(app_exec_cmd, shell=True)
+                try:
+                    proc.communicate(timeout=timeout)
+                    out = proc.returncode
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+                    memory_at_timeout = self.get_memory_mb()
+                    self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} timed out after {timeout} seconds")
+                    self.memory_logger.info(f"MEMORY_WORKER: Gen:{self.gen} PID:{process_id} Team:{team_ids} Rollout:{rollout_pack.rollout_id} TIMEOUT | RSS:{memory_at_timeout:.2f} MB (+{memory_at_timeout - memory_start:.2f})")
+                    rollout_pack.team_fitness = -float(100+i)
+                    rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.team.individuals)
+                    return rollout_pack
+
+                # Explicitly kill and reap the process even if exit code is 0
+                proc.kill()
+                proc.communicate()
+
+                memory_after_cmd = self.get_memory_mb()
+                cmd_memory_delta = memory_after_cmd - memory_before_cmd
+                cmd_name = cmd.split()[0] if cmd.split() else f"cmd_{i+1}"
+                self.memory_logger.info(f"MEMORY_WORKER: Gen:{self.gen} PID:{process_id} Team:{team_ids} Rollout:{rollout_pack.rollout_id} After_{cmd_name} | RSS:{memory_after_cmd:.2f} MB (+{cmd_memory_delta:.2f}) ExitCode:{out}")
+
                 if out == 0:
                     self.logger.info(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} completed successfully")
                 else:
                     self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} failed with exit code {out}")
                     rollout_pack.team_fitness = -float(100+i)
                     rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.team.individuals)
+                    memory_at_failure = self.get_memory_mb()
+                    self.memory_logger.info(f"MEMORY_WORKER: Gen:{self.gen} PID:{process_id} Team:{team_ids} Rollout:{rollout_pack.rollout_id} FAILURE | RSS:{memory_at_failure:.2f} MB (+{memory_at_failure - memory_start:.2f})")
                     return rollout_pack
-            except subprocess.TimeoutExpired:
-                self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} timed out after {timeout} seconds")
+            except Exception as e:
+                self.logger.error(f"{context_prefix} - Exception occurred while running apptainer command: {e}")
                 rollout_pack.team_fitness = -float(100+i)
                 rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.team.individuals)
+                memory_at_failure = self.get_memory_mb()
+                self.memory_logger.info(f"MEMORY_WORKER: Gen:{self.gen} PID:{process_id} Team:{team_ids} Rollout:{rollout_pack.rollout_id} FAILURE | RSS:{memory_at_failure:.2f} MB (+{memory_at_failure - memory_start:.2f})")
                 return rollout_pack
+
+        # Log memory after all apptainer commands
+        memory_after_apptainer = self.get_memory_mb()
+        apptainer_memory_delta = memory_after_apptainer - memory_after_io
+        # if apptainer_memory_delta > 0.1:
+        self.memory_logger.info(f"MEMORY_WORKER: Gen:{self.gen} PID:{process_id} Team:{team_ids} Rollout:{rollout_pack.rollout_id} AfterApptainer | RSS:{memory_after_apptainer:.2f} MB (+{apptainer_memory_delta:.2f})")
+
+        # Log memory before CSV processing
+        memory_before_csv = self.get_memory_mb()
 
         vpositions_csv_file = host_log_folder / "team_positions_filtered.csv"
         vehicle_pts = readXyCsv(vpositions_csv_file)
@@ -864,6 +960,50 @@ class CooperativeCoevolutionaryAlgorithm():
         rollout_pack.team_fitness = team_score
         # For now, copy team fitness to all shaped fitnesses as placeholder
         rollout_pack.shaped_fitnesses = [team_score] * len(rollout_pack.team.individuals)
+
+        # Log memory after CSV processing
+        memory_after_csv = self.get_memory_mb()
+        csv_memory_delta = memory_after_csv - memory_before_csv
+        # if csv_memory_delta > 0.1:
+        self.memory_logger.info(f"MEMORY_WORKER: Gen:{self.gen} PID:{process_id} Team:{team_ids} Rollout:{rollout_pack.rollout_id} AfterCSV | RSS:{memory_after_csv:.2f} MB (+{csv_memory_delta:.2f})")
+
+        # Log memory at end of worker evaluation with total delta
+        memory_end = self.get_memory_mb()
+        total_memory_delta = memory_end - memory_start
+
+        # Always log end, but highlight significant growth
+        # if total_memory_delta > 0.5:
+        #     self.memory_logger.warning(f"MEMORY_WORKER: Gen:{self.gen} PID:{process_id} Team:{team_ids} Rollout:{rollout_pack.rollout_id} End | RSS:{memory_end:.2f} MB (+{total_memory_delta:.2f}) SIGNIFICANT_GROWTH")
+        # else:
+        self.memory_logger.info(f"MEMORY_WORKER: Gen:{self.gen} PID:{process_id} Team:{team_ids} Rollout:{rollout_pack.rollout_id} End | RSS:{memory_end:.2f} MB (+{total_memory_delta:.2f})")
+
+        # Let's delete variables we no longer need and manually run garbage collection
+        # This should act as a nice failsafe against any memory leaks accumulating over time
+        del team_folder
+        del rollout_folder
+
+        del host_work_folder
+        del host_log_folder
+
+        del host_swimmers_txt_file
+        del host_vpositions_txt_file
+
+        del app_work_folder
+        del app_log_folder
+        del apptainer_sif_file
+
+        del app_swimmers_txt_file
+        del app_vpositions_txt_file
+
+        del host_neural_net_csv_file
+
+        del proc
+
+        gc.collect()
+
+        memory_gc = self.get_memory_mb()
+        memory_gc_delta = memory_gc - memory_end
+        self.memory_logger.info(f"MEMORY_WORKER: Gen:{self.gen} PID:{process_id} Team:{team_ids} Rollout:{rollout_pack.rollout_id} AfterGC | RSS:{memory_gc:.2f} MB (+{memory_gc_delta:.2f})")
 
         return rollout_pack
 
@@ -885,7 +1025,21 @@ class CooperativeCoevolutionaryAlgorithm():
         # Add handler to logger
         self.logger.addHandler(file_handler)
 
+        # Set up memory logger
+        memory_log_file = self.trial_folder / 'memory.log'
+        memory_handler = ThreadSafeFileHandler(memory_log_file)
+        memory_handler.setLevel(logging.INFO)
+        memory_formatter = logging.Formatter('%(asctime)s - %(message)s')
+        memory_handler.setFormatter(memory_formatter)
+
+        # Remove any existing memory logger handlers
+        for handler in self.memory_logger.handlers[:]:
+            self.memory_logger.removeHandler(handler)
+
+        self.memory_logger.addHandler(memory_handler)
+
         self.logger.info(f"Starting trial {self.trial_id}")
+        self.log_memory("Trial start")
 
     def setupTrialFitnessCsv(self):
         # Define filepath
@@ -943,6 +1097,7 @@ class CooperativeCoevolutionaryAlgorithm():
 
     def evaluatePopulations(self, populations):
         """Evaluate multiple populations by forming teams"""
+        self.log_memory("Before evaluatePopulations")
         # Give each individual a temporary id for evaluation
         for pop_id, population in enumerate(populations):
             for i, individual in enumerate(population):
@@ -974,6 +1129,7 @@ class CooperativeCoevolutionaryAlgorithm():
         # Now wrap everything up nicely into summaries
         eval_summaries = self.buildEvalSummaries(rollout_packs_with_fitness)
 
+        self.log_memory("After evaluatePopulations")
         return eval_summaries
 
     def runTrial(self):
@@ -1018,9 +1174,12 @@ class CooperativeCoevolutionaryAlgorithm():
             self.saveCheckpoint(populations, team_summaries)
 
         # Iterate generations
+        self.log_memory("Before tqdm loop initialization")
         for _ in tqdm(range(self.num_generations - self.gen)):
+            self.log_memory(f"Inside tqdm loop, iteration start")
             # Update gen counter
             self.gen += 1
+            self.log_memory(f"Generation {self.gen} start")
 
             # Set the seed for this trial and generation
             if self.config_seed is not None:
@@ -1048,12 +1207,16 @@ class CooperativeCoevolutionaryAlgorithm():
             # Save it
             self.saveCheckpoint(populations, team_summaries)
 
+            self.log_memory(f"Generation {self.gen} end")
+
     def run(self):
+        self.log_memory("Algorithm start")
         for trial_id in range(self.num_trials):
             self.trial_id = trial_id
             self.runTrial()
 
         if self.use_multiprocessing:
+            self.log_memory("Before pool close")
             self.pool.close()
 
 if __name__ == '__main__':
