@@ -284,8 +284,6 @@ class CooperativeCoevolutionaryAlgorithm():
         self.logger = logging.getLogger('CooperativeCoevolutionaryAlgorithm')
         self.logger.setLevel(logging.INFO)
 
-        self.setupMapping()
-
     def load_config(self):
         """Load configuration from YAML file"""
         with open(self.config_filepath, 'r') as f:
@@ -405,11 +403,11 @@ class CooperativeCoevolutionaryAlgorithm():
     # This makes it possible to pass evaluation to multiprocessing
     # Without this, the pool tries to pickle the entire object, including itself
     # which it cannot do
-    def __getstate__(self):
-        self_dict = self.__dict__.copy()
-        del self_dict['pool']
-        del self_dict['map']
-        return self_dict
+    # def __getstate__(self):
+    #     self_dict = self.__dict__.copy()
+    #     del self_dict['pool']
+    #     del self_dict['map']
+    #     return self_dict
 
     def __setstate__(self, state):
         self.__dict__.update(state)
@@ -514,13 +512,6 @@ class CooperativeCoevolutionaryAlgorithm():
                     total_swimmers += 1
                     break
         return total_swimmers
-
-    def setupMapping(self):
-        if self.use_multiprocessing:
-            self.pool = multiprocessing.Pool(processes=self.num_processes)
-            self.map = self.pool.map_async
-        else:
-            self.map = map
 
     def resetSeed(self):
         self.random_seed_val= self.config_seed
@@ -710,18 +701,18 @@ class CooperativeCoevolutionaryAlgorithm():
     def evaluateTeam(self, rollout_pack):
         """Evaluate a team of individuals"""
         # Set up logger for this process if it doesn't have handlers
-        if not self.logger.handlers:
-            log_file = self.trial_folder / 'trial.log'
-            file_handler = ThreadSafeFileHandler(log_file)
-            file_handler.setLevel(logging.INFO)
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-            file_handler.setFormatter(formatter)
-            self.logger.addHandler(file_handler)
+        # if not self.logger.handlers:
+        #     log_file = self.trial_folder / 'trial.log'
+        #     file_handler = ThreadSafeFileHandler(log_file)
+        #     file_handler.setLevel(logging.INFO)
+        #     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        #     file_handler.setFormatter(formatter)
+        #     self.logger.addHandler(file_handler)
 
         # Configure logger with process context
         process_id = os.getpid()
-        team_ids = [ind.temp_id for ind in rollout_pack.team.individuals]
-        context_prefix = f"PID:{process_id} Gen:{self.gen} Team:{team_ids} Rollout:{rollout_pack.rollout_id}"
+        # team_ids = [ind.temp_id for ind in rollout_pack.team.individuals]
+        # context_prefix = f"PID:{process_id} Gen:{self.gen} Team:{team_ids} Rollout:{rollout_pack.rollout_id}"
 
         team_folder = 'team_' + str(rollout_pack.team.team_id) + '_inds_' + '_'.join(str(ind.temp_id) for ind in rollout_pack.team.individuals)
         rollout_folder = 'rollout_' + str(rollout_pack.rollout_id)
@@ -838,19 +829,20 @@ class CooperativeCoevolutionaryAlgorithm():
                 f"{exec_cmd}\"{cmd}\" >> {app_log_file} 2>&1"
             )
 
-            self.logger.info(f"{context_prefix} - Running apptainer command {i+1}/{len(apptainer_cmds)}: {cmd}")
+            # self.logger.info(f"{context_prefix} - Running apptainer command {i+1}/{len(apptainer_cmds)}: {cmd}")
 
             try:
                 out = subprocess.call(app_exec_cmd, shell=True, timeout=timeout)
                 if out == 0:
-                    self.logger.info(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} completed successfully")
+                    # self.logger.info(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} completed successfully")
+                    pass
                 else:
-                    self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} failed with exit code {out}")
+                    # self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} failed with exit code {out}")
                     rollout_pack.team_fitness = -float(100+i)
                     rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.team.individuals)
                     return rollout_pack
             except subprocess.TimeoutExpired:
-                self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} timed out after {timeout} seconds")
+                # self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} timed out after {timeout} seconds")
                 rollout_pack.team_fitness = -float(100+i)
                 rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.team.individuals)
                 return rollout_pack
@@ -930,18 +922,18 @@ class CooperativeCoevolutionaryAlgorithm():
         # Append the row to the CSV file
         df.to_csv(self.fitness_csv_file, mode='a', header=False, index=False)
 
-    def evaluateTeams(self, rollout_packs):
+    def evaluateTeams(self, rollout_packs, map_func):
         if self.use_multiprocessing:
-            jobs = self.map(self.evaluateTeam, rollout_packs)
+            jobs = map_func(self.evaluateTeam, rollout_packs)
             rollout_packs_with_fitness = jobs.get()
             for rollout_pack, rollout_pack_with_fitness in zip(rollout_packs, rollout_packs_with_fitness):
                 rollout_pack.team_fitness = rollout_pack_with_fitness.team_fitness
                 rollout_pack.shaped_fitnesses = rollout_pack_with_fitness.shaped_fitnesses
         else:
-            rollout_packs = list(self.map(self.evaluateTeam, rollout_packs))
+            rollout_packs = list(map_func(self.evaluateTeam, rollout_packs))
         return rollout_packs
 
-    def evaluatePopulations(self, populations):
+    def evaluatePopulations(self, populations, map_func):
         """Evaluate multiple populations by forming teams"""
         # Give each individual a temporary id for evaluation
         for pop_id, population in enumerate(populations):
@@ -969,7 +961,7 @@ class CooperativeCoevolutionaryAlgorithm():
                 )
 
         # Evaluate teams in rollouts
-        rollout_packs_with_fitness = self.evaluateTeams(rollout_packs)
+        rollout_packs_with_fitness = self.evaluateTeams(rollout_packs, map_func)
 
         # Now wrap everything up nicely into summaries
         eval_summaries = self.buildEvalSummaries(rollout_packs_with_fitness)
@@ -1005,8 +997,14 @@ class CooperativeCoevolutionaryAlgorithm():
             # Initialize the populations
             populations = self.populations()
 
-            # Evaluate teams
-            team_summaries = self.evaluatePopulations(populations)
+            # Evaluate teams (create/close pool for initial evaluation)
+            if self.use_multiprocessing:
+                with multiprocessing.Pool(processes=self.num_processes) as pool:
+                    map_func = pool.map_async
+                    team_summaries = self.evaluatePopulations(populations, map_func)
+            else:
+                map_func = map
+                team_summaries = self.evaluatePopulations(populations, map_func)
 
             # Wrap summary information back into each individual
             self.wrapIndividuals(populations, team_summaries)
@@ -1036,8 +1034,14 @@ class CooperativeCoevolutionaryAlgorithm():
             # Now populate the populations with the offspring
             populations[:] = offspring_populations
 
-            # Evaluate the new populations
-            team_summaries[:] = self.evaluatePopulations(populations)
+            # Evaluate the new populations (create/close pool per generation)
+            if self.use_multiprocessing:
+                with multiprocessing.Pool(processes=self.num_processes) as pool:
+                    map_func = pool.map_async
+                    team_summaries[:] = self.evaluatePopulations(populations, map_func)
+            else:
+                map_func = map
+                team_summaries[:] = self.evaluatePopulations(populations, map_func)
 
             # Wrap summary information back in
             self.wrapIndividuals(populations, team_summaries)
@@ -1052,9 +1056,6 @@ class CooperativeCoevolutionaryAlgorithm():
         for trial_id in range(self.num_trials):
             self.trial_id = trial_id
             self.runTrial()
-
-        if self.use_multiprocessing:
-            self.pool.close()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run evolutionary algorithm.")
