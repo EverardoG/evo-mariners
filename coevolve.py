@@ -382,6 +382,10 @@ class CooperativeCoevolutionaryAlgorithm():
             rollout_poses = [Pose(pose['x'], pose['y'], pose['heading']) for pose in rollout]
             self.default_vehicle_poses.append(rollout_poses)
 
+        # Reward shaping settings
+        self.rewards = config.get('rewards', 'same')
+        self.same_rewards = config.get('rewards.same', 'Global')
+
         # MOOS settings
         self.moos_timewarp = config.get('moos_timewarp', 10)
         self.max_db_uptime = config.get('max_db_uptime', 120)
@@ -814,11 +818,28 @@ class CooperativeCoevolutionaryAlgorithm():
         apptainer_cmds.append(csv_merge_files_cmd)
         timeouts.append(500)
 
+        if self.rewards == 'same' and self.same_rewards == 'difference':
+            for i in range(len(vehicle_poses)):
+                csv_merge_files_cmd = (
+                    f"csv_merge_files {app_log_folder}/ -e abe{i+1}"
+                )
+                apptainer_cmds.append(csv_merge_files_cmd)
+                timeouts.append(500)
+
         filter_node_reports_cmd = (
             f"csv_filter_duplicate_rows {app_log_folder}/team_positions.csv {app_log_folder}/team_positions_filtered.csv"
         )
         apptainer_cmds.append(filter_node_reports_cmd)
         timeouts.append(self.filter_csv_timeout)
+
+        # Let's also generate the filtered team positions for difference rewards
+        if self.rewards == 'same' and self.same_rewards == 'difference':
+            for i in range(len(vehicle_poses)):
+                filter_node_reports_cmd = (
+                    f"csv_filter_duplicate_rows {app_log_folder}/team_positions_without_abe{i+1}.csv {app_log_folder}/team_positions_without_abe{i+1}_filtered.csv"
+                )
+                apptainer_cmds.append(filter_node_reports_cmd)
+                timeouts.append(self.filter_csv_timeout)
 
         app_log_file = Path(host_log_folder) / "apptainer_out.log"
         with open(app_log_file, 'w') as f:
@@ -855,8 +876,21 @@ class CooperativeCoevolutionaryAlgorithm():
         team_score = swimmers_rescued / len(swimmer_pts)
 
         rollout_pack.team_fitness = team_score
-        # For now, copy team fitness to all shaped fitnesses as placeholder
-        rollout_pack.shaped_fitnesses = [team_score] * len(rollout_pack.team.individuals)
+        if self.rewards == 'same' and self.same_rewards == 'difference':
+            rollout_pack.shaped_fitnesses = []
+            for i in range(len(vehicle_poses)):
+                counterfactual_vpositions_csv_file = host_log_folder / f"team_positions_without_abe{i+1}_filtered.csv"
+                cfac_vehicle_pts = readXyCsv(counterfactual_vpositions_csv_file)
+
+                cfac_swimmers_rescued = self.computeSwimmersRescued(cfac_vehicle_pts, swimmer_pts)
+                cfac_team_score = cfac_swimmers_rescued / len(swimmer_pts)
+
+                difference = team_score - cfac_team_score
+                rollout_pack.shaped_fitnesses.append(difference)
+
+        # Default behavior is just give everyone global reward as a shaped reward
+        else:
+            rollout_pack.shaped_fitnesses = [team_score] * len(rollout_pack.team.individuals)
 
         return rollout_pack
 
