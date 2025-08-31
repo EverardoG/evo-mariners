@@ -821,7 +821,8 @@ class CooperativeCoevolutionaryAlgorithm():
         timeouts.append(self.filter_csv_timeout)
 
         app_log_file = Path(host_log_folder) / "apptainer_out.log"
-        app_log_file.write_text('')
+        with open(app_log_file, 'w') as f:
+            f.write(' ')
 
         # Run apptainer commands
         for i, (cmd, timeout) in enumerate(zip(apptainer_cmds, timeouts)):
@@ -863,6 +864,7 @@ class CooperativeCoevolutionaryAlgorithm():
         """Set up trial-specific logging to trial.log file"""
         # Remove any existing handlers
         for handler in self.logger.handlers[:]:
+            handler.close()
             self.logger.removeHandler(handler)
 
         # Create thread-safe file handler for trial.log
@@ -898,7 +900,8 @@ class CooperativeCoevolutionaryAlgorithm():
             # Create empty dataframe
             df = pd.DataFrame(columns=columns)
             # Write only the header to the CSV
-            df.to_csv(self.fitness_csv_file, index=False)
+            with open(self.fitness_csv_file, mode='a') as f:
+                df.to_csv(f, index=False)
 
     def updateTrialFitnessCsv(self, team_summaries):
         # Build out a dictionary of fitnesses
@@ -920,7 +923,8 @@ class CooperativeCoevolutionaryAlgorithm():
         df = pd.DataFrame([fit_dict])
 
         # Append the row to the CSV file
-        df.to_csv(self.fitness_csv_file, mode='a', header=False, index=False)
+        with open(self.fitness_csv_file, mode='a') as f:
+            df.to_csv(f, mode='a', header=False, index=False)
 
     def evaluateTeams(self, rollout_packs, map_func):
         if self.use_multiprocessing:
