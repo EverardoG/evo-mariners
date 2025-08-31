@@ -12,6 +12,7 @@ import pickle
 import logging
 import fcntl
 import time
+import psutil
 
 from tqdm import tqdm
 import pandas as pd
@@ -715,8 +716,8 @@ class CooperativeCoevolutionaryAlgorithm():
 
         # Configure logger with process context
         process_id = os.getpid()
-        # team_ids = [ind.temp_id for ind in rollout_pack.team.individuals]
-        # context_prefix = f"PID:{process_id} Gen:{self.gen} Team:{team_ids} Rollout:{rollout_pack.rollout_id}"
+        team_ids = [ind.temp_id for ind in rollout_pack.team.individuals]
+        context_prefix = f"PID:{process_id} Gen:{self.gen} Team:{team_ids} Rollout:{rollout_pack.rollout_id}"
 
         team_folder = 'team_' + str(rollout_pack.team.team_id) + '_inds_' + '_'.join(str(ind.temp_id) for ind in rollout_pack.team.individuals)
         rollout_folder = 'rollout_' + str(rollout_pack.rollout_id)
@@ -734,6 +735,15 @@ class CooperativeCoevolutionaryAlgorithm():
 
         app_swimmers_txt_file = app_work_folder / 'swimmers.txt'
         app_vpositions_txt_file = app_work_folder / 'vpositions.txt'
+
+        # Create logger
+        rollout_log_file = host_log_folder / 'rollout.log'
+        rollout_logger = logging.getLogger(f'RolloutLogger_{process_id}_{rollout_pack.rollout_id}')
+        rollout_logger.setLevel(logging.INFO)
+        file_handler = logging.FileHandler(rollout_log_file)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - PID:%(process)d - %(message)s')
+        file_handler.setFormatter(formatter)
+        rollout_logger.addHandler(file_handler)
 
         # Get swimmer points for this rollout
         swimmer_pts = self.getSwimmerPtsForRollout(rollout_pack.rollout_id, rollout_pack.seed)
@@ -851,22 +861,28 @@ class CooperativeCoevolutionaryAlgorithm():
                 f"{exec_cmd}\"{cmd}\" >> {app_log_file} 2>&1"
             )
 
-            # self.logger.info(f"{context_prefix} - Running apptainer command {i+1}/{len(apptainer_cmds)}: {cmd}")
+            rollout_logger.info(f"{context_prefix} - Running apptainer command {i+1}/{len(apptainer_cmds)}: {cmd}")
 
             try:
                 out = subprocess.call(app_exec_cmd, shell=True, timeout=timeout)
                 if out == 0:
-                    # self.logger.info(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} completed successfully")
+                    rollout_logger.info(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} completed successfully")
                     pass
                 else:
-                    # self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} failed with exit code {out}")
+                    rollout_logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} failed with exit code {out}")
                     rollout_pack.team_fitness = -float(100+i)
                     rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.team.individuals)
+                    for handler in rollout_logger.handlers[:]:
+                        handler.close()
+                        rollout_logger.removeHandler(handler)
                     return rollout_pack
             except subprocess.TimeoutExpired:
-                # self.logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} timed out after {timeout} seconds")
+                rollout_logger.error(f"{context_prefix} - Apptainer command {i+1}/{len(apptainer_cmds)} timed out after {timeout} seconds")
                 rollout_pack.team_fitness = -float(100+i)
                 rollout_pack.shaped_fitnesses = [-float(100+i)] * len(rollout_pack.team.individuals)
+                for handler in rollout_logger.handlers[:]:
+                    handler.close()
+                    rollout_logger.removeHandler(handler)
                 return rollout_pack
 
         vpositions_csv_file = host_log_folder / "team_positions_filtered.csv"
@@ -891,7 +907,9 @@ class CooperativeCoevolutionaryAlgorithm():
         # Default behavior is just give everyone global reward as a shaped reward
         else:
             rollout_pack.shaped_fitnesses = [team_score] * len(rollout_pack.team.individuals)
-
+        for handler in rollout_logger.handlers[:]:
+            handler.close()
+            rollout_logger.removeHandler(handler)
         return rollout_pack
 
     def setupTrialLogger(self):
@@ -1089,6 +1107,14 @@ class CooperativeCoevolutionaryAlgorithm():
 
             # Save it
             self.saveCheckpoint(populations, team_summaries)
+
+            # Log open files
+            pid = os.getpid()
+            proc = psutil.Process(pid)
+            psutil_count = len(proc.open_files())
+            cmd = f"lsof -p {pid} 2>/dev/null | wc -l"
+            lsof_count = int(subprocess.check_output(cmd, shell=True).decode().strip())
+            self.logger.info(f'Open PID files according to psutil: {psutil_count} | lsof: {lsof_count}')
 
     def run(self):
         for trial_id in range(self.num_trials):
