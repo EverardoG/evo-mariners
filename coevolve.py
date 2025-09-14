@@ -61,12 +61,13 @@ def getSizeOfNet(structure: List[int]) -> int:
 def getRandomWeights(num_weights: int) -> List[float]:
     return [2*random.random()-1 for _ in range(num_weights)]
 
-def writeSwimmersTxt(swimmer_pts, filepath):
+def writeSwimmersTxt(swimmer_pts, polygon_str, filepath):
     """
     Write swimmers data to a text file.
 
     Args:
         swimmer_pts: List of shapely Point objects representing swimmer positions
+        polygon_str: moos-ivp formatted string for swim region
         filepath: pathlib.Path object for the output file
 
     Raises:
@@ -75,7 +76,7 @@ def writeSwimmersTxt(swimmer_pts, filepath):
     """
     with open(filepath, 'w') as f:
         # Write the top line
-        f.write("poly = pts={60,10:-75.5402,-54.2561:-36.9866,-135.58:98.5536,-71.3241}\n")
+        f.write(f"poly = {polygon_str}\n")
 
         # Write swimmer data
         for i, swimmer_pt in enumerate(swimmer_pts):
@@ -332,6 +333,11 @@ class CooperativeCoevolutionaryAlgorithm():
 
         # Parse swimmer spawning configuration
         self.swimmer_spawner_type = config.get('swimmer_spawner', 'fixed')
+        self.polygon_str = config.get(
+            'swimmer_spawner.polygon',
+            'pts={60,10:-75.5402,-54.2561:-36.9866,-135.58:98.5536,-71.3241}'
+        )
+        self.swimmer_polygon = parsePolygonString(self.polygon_str)
 
         if self.swimmer_spawner_type == 'fixed':
             swimmer_config = config.get('swimmer_spawner.fixed.pts', [{'x': 12.0, 'y': -60.0}])
@@ -349,10 +355,7 @@ class CooperativeCoevolutionaryAlgorithm():
             self.num_random_swimmers = config.get('swimmer_spawner.random.num', 1)
             self.random_distribution = config.get('swimmer_spawner.random.distribution', 'uniform')
 
-            if self.random_distribution == 'uniform':
-                polygon_str = config.get('swimmer_spawner.random.polygon', 'pts={60,10:-75.5402,-54.2561:-36.9866,-135.58:98.5536,-71.3241}')
-                self.swimmer_polygon = parsePolygonString(polygon_str)
-            elif self.random_distribution == 'circle':
+            if self.random_distribution == 'circle':
                 self.circle_radius = config.get('swimmer_spawner.random.circle.radius', 30)
                 circle_center = config.get('swimmer_spawner.random.circle.center', {'x': 0, 'y': 0})
                 self.circle_center_x = circle_center['x']
@@ -747,7 +750,7 @@ class CooperativeCoevolutionaryAlgorithm():
 
         # Get swimmer points for this rollout
         swimmer_pts = self.getSwimmerPtsForRollout(rollout_pack.rollout_id, rollout_pack.seed)
-        writeSwimmersTxt(swimmer_pts, host_swimmers_txt_file)
+        writeSwimmersTxt(swimmer_pts, self.polygon_str, host_swimmers_txt_file)
 
         # Get vehicle poses for this rollout (use same for all team members)
         vehicle_poses = self.getVehiclePosesForRollout(rollout_pack.rollout_id)
