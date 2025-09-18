@@ -1,0 +1,2 @@
+#!/bin/bash
+for f in */*.alog; do [ -e "$f" ] || continue; printf "%s\t%s\n" "$f" "$(alogmhash --mhash "$f" | awk '{print $NF}')" ; done
